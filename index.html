@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Real-Time Chat Tester</title>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f0f0f0;
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+      }
+      .container {
+        background-color: white;
+        border-radius: 5px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      h2 {
+        color: #444;
+      }
+      input,
+      button,
+      select {
+        margin: 5px 0;
+        padding: 5px;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      #chatMessages {
+        height: 200px;
+        overflow-y: scroll;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      .message {
+        margin-bottom: 5px;
+      }
+      #status {
+        font-weight: bold;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Real-Time Chat Tester</h1>
+    <div class="container">
+      <div class="section">
+        <h2>Authentication</h2>
+        <input type="text" id="username" placeholder="Username" />
+        <input type="password" id="password" placeholder="Password" />
+        <button onclick="login()">Login</button>
+        <button onclick="register()">Register</button>
+      </div>
+      <div class="section">
+        <h2>Conversation</h2>
+        <input
+          type="text"
+          id="conversationName"
+          placeholder="Conversation Name"
+        />
+        <button onclick="createConversation()">Create Conversation</button>
+        <input
+          type="number"
+          id="conversationId"
+          placeholder="Conversation ID"
+        />
+        <button onclick="joinConversation()">Join Conversation</button>
+        <button onclick="leaveConversation()">Leave Conversation</button>
+      </div>
+      <div class="section">
+        <h2>Chat</h2>
+        <div id="chatMessages"></div>
+        <input type="text" id="messageInput" placeholder="Type a message" />
+        <button onclick="sendMessage()">Send</button>
+      </div>
+      <div class="section">
+        <h2>Presence</h2>
+        <select id="presenceStatus">
+          <option value="ONLINE">Online</option>
+          <option value="AWAY">Away</option>
+          <option value="BUSY">Busy</option>
+          <option value="OFFLINE">Offline</option>
+        </select>
+        <button onclick="setPresence()">Set Presence</button>
+      </div>
+      <div class="section">
+        <h2>Typing Indicator</h2>
+        <button onmousedown="startTyping()" onmouseup="stopTyping()">
+          Simulate Typing
+        </button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <script>
+      let socket;
+      let currentConversationId;
+      const API_URL = "http://localhost:3000";
+
+      function login() {
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+
+        fetch(`${API_URL}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.accessToken) {
+              localStorage.setItem("token", data.accessToken);
+              connectSocket();
+              updateStatus("Logged in successfully");
+            } else {
+              updateStatus("Login failed");
+            }
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function register() {
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const email = username + "@example.com"; // For testing purposes
+
+        fetch(`${API_URL}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, email, password }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.userId) {
+              updateStatus("Registered successfully. Please login.");
+            } else {
+              updateStatus("Registration failed");
+            }
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function connectSocket() {
+        socket = io(API_URL, {
+          withCredentials: true,
+          auth: {
+            token: localStorage.getItem("token"),
+          },
+        });
+
+        socket.on("connect", () => {
+          updateStatus("Socket connected");
+        });
+
+        socket.on("newMessage", (message) => {
+          displayMessage(message);
+        });
+
+        socket.on("typingUpdate", (data) => {
+          if (data.conversationId === currentConversationId) {
+            updateStatus(data.isTyping ? "Someone is typing..." : "");
+          }
+        });
+
+        socket.on("presenceUpdate", (data) => {
+          updateStatus(`User ${data.userId} is now ${data.status}`);
+        });
+      }
+
+      function createConversation() {
+        const name = document.getElementById("conversationName").value;
+        if (!name) {
+          updateStatus("Please enter a conversation name");
+          return;
+        }
+
+        fetch(`${API_URL}/conversations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ name, isGroup: true, participantIds: [] }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.id) {
+              updateStatus(`Conversation created with ID: ${data.id}`);
+              document.getElementById("conversationId").value = data.id;
+            } else {
+              updateStatus("Failed to create conversation");
+            }
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function joinConversation() {
+        currentConversationId = document.getElementById("conversationId").value;
+        socket.emit("joinConversations", [parseInt(currentConversationId)]);
+        updateStatus("Joined conversation " + currentConversationId);
+      }
+
+      function leaveConversation() {
+        if (currentConversationId) {
+          socket.emit("leaveConversation", parseInt(currentConversationId));
+          updateStatus("Left conversation " + currentConversationId);
+          currentConversationId = null;
+        }
+      }
+
+      function sendMessage() {
+        const content = document.getElementById("messageInput").value;
+        if (currentConversationId && content) {
+          socket.emit("sendMessage", {
+            conversationId: parseInt(currentConversationId),
+            content,
+            contentType: "TEXT",
+          });
+          document.getElementById("messageInput").value = "";
+        }
+      }
+
+      function setPresence() {
+        const status = document.getElementById("presenceStatus").value;
+        socket.emit("setPresence", status);
+        updateStatus("Presence set to " + status);
+      }
+
+      function startTyping() {
+        if (currentConversationId) {
+          socket.emit("typing", {
+            conversationId: parseInt(currentConversationId),
+            isTyping: true,
+          });
+        }
+      }
+
+      function stopTyping() {
+        if (currentConversationId) {
+          socket.emit("typing", {
+            conversationId: parseInt(currentConversationId),
+            isTyping: false,
+          });
+        }
+      }
+
+      function displayMessage(message) {
+        const messagesDiv = document.getElementById("chatMessages");
+        const messageElement = document.createElement("div");
+        messageElement.className = "message";
+        messageElement.textContent = `${message.sender.username}: ${message.content}`;
+        messagesDiv.appendChild(messageElement);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
+      function updateStatus(message) {
+        document.getElementById("status").textContent = message;
+      }
+    </script>
+  </body>
+</html>

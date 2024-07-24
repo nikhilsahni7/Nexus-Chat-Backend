@@ -1,0 +1,138 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               Int               @id @default(autoincrement())
+  username         String            @unique
+  email            String            @unique
+  password         String
+  lastSeen         DateTime          @default(now())
+  presenceStatus   PresenceStatus    @default(ONLINE)
+  profileImage     String?
+  bio              String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  sentMessages     Message[]         @relation("SentMessages")
+  receivedMessages Message[]         @relation("ReceivedMessages")
+  participants     Participant[]
+  typingStatuses   TypingStatus[]
+  reactions        MessageReaction[]
+  settings         UserSettings?
+
+  ReadReceipt ReadReceipt[]
+}
+
+model UserSettings {
+  id                 Int     @id @default(autoincrement())
+  userId             Int     @unique
+  user               User    @relation(fields: [userId], references: [id])
+  notificationsEnabled Boolean @default(true)
+  darkModeEnabled    Boolean @default(false)
+  language           String  @default("en")
+}
+
+model Conversation {
+  id           Int           @id @default(autoincrement())
+  name         String?
+  isGroup      Boolean       @default(false)
+  lastMessageId Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  participants Participant[]
+  messages     Message[]
+  lastMessage  Message?      @relation("LastMessage", fields: [lastMessageId], references: [id])
+
+  TypingStatus TypingStatus[]
+}
+
+model Participant {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  conversationId Int
+  joinedAt       DateTime     @default(now())
+  leftAt         DateTime?
+  isAdmin        Boolean      @default(false)
+  user           User         @relation(fields: [userId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  unreadCount    Int          @default(0)
+
+  @@unique([userId, conversationId])
+}
+
+model Message {
+  id             Int               @id @default(autoincrement())
+  conversationId Int
+  senderId       Int
+  content        String
+  contentType    MessageType       @default(TEXT)
+  timestamp      DateTime          @default(now())
+  readBy         ReadReceipt[]
+  sender         User              @relation("SentMessages", fields: [senderId], references: [id])
+  conversation   Conversation      @relation(fields: [conversationId], references: [id])
+  reactions      MessageReaction[]
+  replyToId      Int?
+  replyTo        Message?          @relation("Replies", fields: [replyToId], references: [id])
+  replies        Message[]         @relation("Replies")
+  lastMessageFor Conversation[]    @relation("LastMessage")
+
+  @@index([conversationId, timestamp])
+  User User[] @relation("ReceivedMessages")
+}
+
+model ReadReceipt {
+  id        Int      @id @default(autoincrement())
+  messageId Int
+  userId    Int
+  readAt    DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+}
+
+model TypingStatus {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  conversationId Int
+  isTyping       Boolean
+  timestamp      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([userId, conversationId])
+}
+
+model MessageReaction {
+  id        Int      @id @default(autoincrement())
+  messageId Int
+  userId    Int
+  reaction  String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId])
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  AUDIO
+  VIDEO
+}
+
+enum PresenceStatus {
+  ONLINE
+  AWAY
+  BUSY
+  OFFLINE
+}

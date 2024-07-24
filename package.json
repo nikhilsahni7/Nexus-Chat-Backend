@@ -1,0 +1,35 @@
+{
+  "name": "bun-prisma",
+  "module": "server.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun --watch run server.ts",
+    "build": "bun build ./server.ts --outdir ./dist",
+    "prod": "bun run ./dist/server.js",
+    "prisma:generate": "bunx prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": " bunx prisma studio"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prisma": "^5.17.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.17.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/socket.io": "^3.0.2",
+    "@types/uuid": "^10.0.0",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.7.5",
+    "uuid": "^10.0.0"
+  }
+}
