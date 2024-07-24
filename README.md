@@ -1,4 +1,4 @@
-# ./
+# Nexus-Chat
 
 To install dependencies:
 
