@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../server";
 import { authenticateToken } from "../middleware/auth";
+import { io } from "../server";
 import type { AuthenticatedRequest } from "../types";
 
 const router = express.Router();
@@ -30,7 +31,22 @@ router.get(
               },
             },
           },
-          lastMessage: true,
+          lastMessage: {
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+              parent: {
+                select: {
+                  id: true,
+                  content: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { updatedAt: "desc" },
       });
@@ -74,6 +90,12 @@ router.post(
           },
         },
       });
+
+      // Notify all participants about the new conversation
+      participantIds.forEach((participantId: number) => {
+        io.to(`user:${participantId}`).emit("newConversation", conversation);
+      });
+
       res.status(201).json(conversation);
     } catch (error) {
       res.status(500).json({ error: "Error creating conversation" });
@@ -109,7 +131,22 @@ router.get(
               },
             },
           },
-          lastMessage: true,
+          lastMessage: {
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+              parent: {
+                select: {
+                  id: true,
+                  content: true,
+                },
+              },
+            },
+          },
         },
       });
 
@@ -120,6 +157,36 @@ router.get(
       res.json(conversation);
     } catch (error) {
       res.status(500).json({ error: "Error fetching conversation" });
+    }
+  }
+);
+
+router.post(
+  "/:conversationId/leave",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const conversationId = parseInt(req.params.conversationId);
+
+    try {
+      await prisma.participant.delete({
+        where: {
+          userId_conversationId: {
+            userId,
+            conversationId,
+          },
+        },
+      });
+
+      // Notify other participants that the user left
+      io.to(`conversation:${conversationId}`).emit("userLeftConversation", {
+        userId,
+        conversationId,
+      });
+
+      res.json({ message: "Successfully left the conversation" });
+    } catch (error) {
+      res.status(500).json({ error: "Error leaving conversation" });
     }
   }
 );

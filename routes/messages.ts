@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../server";
 import { authenticateToken } from "../middleware/auth";
+import { io } from "../server";
 import type { AuthenticatedRequest } from "../types";
 
 const router = express.Router();
@@ -41,7 +42,7 @@ router.get(
               readAt: true,
             },
           },
-          replyTo: {
+          parent: {
             include: {
               sender: {
                 select: {
@@ -57,20 +58,91 @@ router.get(
         take: pageSize,
       });
 
-      await prisma.readReceipt.createMany({
-        data: messages
-          .filter(
-            (msg) =>
-              msg.senderId !== userId &&
-              !msg.readBy.some((rb) => rb.userId === userId)
-          )
-          .map((msg) => ({ messageId: msg.id, userId })),
-        skipDuplicates: true,
-      });
+      // Mark messages as read
+      const unreadMessages = messages.filter(
+        (msg) =>
+          msg.senderId !== userId &&
+          !msg.readBy.some((rb) => rb.userId === userId)
+      );
+
+      if (unreadMessages.length > 0) {
+        await prisma.readReceipt.createMany({
+          data: unreadMessages.map((msg) => ({
+            messageId: msg.id,
+            userId,
+          })),
+          skipDuplicates: true,
+        });
+
+        // Notify other users that messages have been read
+        io.to(`conversation:${conversationId}`).emit("messagesRead", {
+          userId,
+          messageIds: unreadMessages.map((msg) => msg.id),
+        });
+      }
 
       res.json(messages.reverse());
     } catch (error) {
       res.status(500).json({ error: "Error fetching messages" });
+    }
+  }
+);
+
+router.post(
+  "/:conversationId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const conversationId = parseInt(req.params.conversationId);
+    const { content, contentType, parentId } = req.body;
+
+    try {
+      const message = await prisma.message.create({
+        data: {
+          senderId: userId,
+          conversationId,
+          content,
+          contentType,
+          parentId,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              username: true,
+              profileImage: true,
+            },
+          },
+          parent: {
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Update last message for the conversation
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageId: message.id },
+      });
+
+      // Emit the new message to all participants in the conversation
+      io.to(`conversation:${conversationId}`).emit("newMessage", message);
+
+      // If it's a reply, also emit to the thread
+      if (message.parentId) {
+        io.to(`thread:${message.parentId}`).emit("newThreadReply", message);
+      }
+
+      res.status(201).json(message);
+    } catch (error) {
+      res.status(500).json({ error: "Error sending message" });
     }
   }
 );
@@ -108,6 +180,15 @@ router.put(
             },
           },
         });
+
+        // Emit the updated message to all participants in the conversation
+        if (message) {
+          io.to(`conversation:${message.conversationId}`).emit(
+            "messageUpdated",
+            message
+          );
+        }
+
         res.json(message);
       } else {
         res.status(404).json({
@@ -121,44 +202,79 @@ router.put(
 );
 
 router.post(
-  "/thread",
+  "/:messageId/react",
   authenticateToken,
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
-    const { parentMessageId, content, contentType } = req.body;
+    const messageId = parseInt(req.params.messageId);
+    const { reaction } = req.body;
 
     try {
-      const parentMessage = await prisma.message.findUnique({
-        where: { id: parentMessageId },
-        select: { conversationId: true },
+      const existingReaction = await prisma.messageReaction.findUnique({
+        where: {
+          messageId_userId: {
+            messageId,
+            userId,
+          },
+        },
       });
 
-      if (!parentMessage) {
-        return res.status(404).json({ error: "Parent message not found" });
+      let updatedReaction;
+
+      if (existingReaction) {
+        if (existingReaction.reaction === reaction) {
+          // Remove the reaction if it's the same
+          await prisma.messageReaction.delete({
+            where: { id: existingReaction.id },
+          });
+        } else {
+          // Update the reaction if it's different
+          updatedReaction = await prisma.messageReaction.update({
+            where: { id: existingReaction.id },
+            data: { reaction },
+          });
+        }
+      } else {
+        // Create a new reaction
+        updatedReaction = await prisma.messageReaction.create({
+          data: {
+            messageId,
+            userId,
+            reaction,
+          },
+        });
       }
 
-      const threadReply = await prisma.message.create({
-        data: {
-          senderId: userId,
-          conversationId: parentMessage.conversationId,
-          content,
-          contentType,
-          parentId: parentMessageId,
-        },
+      const message = await prisma.message.findUnique({
+        where: { id: messageId },
         include: {
-          sender: {
-            select: {
-              id: true,
-              username: true,
-              profileImage: true,
+          reactions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
             },
           },
         },
       });
 
-      res.status(201).json(threadReply);
+      // Emit the updated message reactions to all participants in the conversation
+      if (message) {
+        io.to(`conversation:${message.conversationId}`).emit(
+          "messageReactionUpdate",
+          {
+            messageId,
+            reactions: message.reactions,
+          }
+        );
+      }
+
+      res.json(updatedReaction || { removed: true });
     } catch (error) {
-      res.status(500).json({ error: "Error creating thread reply" });
+      res.status(500).json({ error: "Error updating message reaction" });
     }
   }
 );
@@ -203,6 +319,38 @@ router.get(
       res.json(threadReplies);
     } catch (error) {
       res.status(500).json({ error: "Error fetching thread replies" });
+    }
+  }
+);
+
+router.post(
+  "/:messageId/read",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const messageId = parseInt(req.params.messageId);
+
+    try {
+      await prisma.readReceipt.create({
+        data: {
+          messageId,
+          userId,
+        },
+      });
+
+      const message = await prisma.message.findUnique({
+        where: { id: messageId },
+        include: { readBy: true },
+      });
+
+      io.to(`conversation:${message!.conversationId}`).emit("messageRead", {
+        messageId,
+        userId,
+      });
+
+      res.sendStatus(200);
+    } catch (error) {
+      res.status(500).json({ error: "Error marking message as read" });
     }
   }
 );

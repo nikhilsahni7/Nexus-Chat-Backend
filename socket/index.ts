@@ -1,10 +1,16 @@
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { prisma } from "../server";
 import { PresenceStatus, MessageType } from "@prisma/client";
 
+interface AuthenticatedSocket extends Socket {
+  data: {
+    userId: number;
+  };
+}
+
 export default function setupSocketIO(io: Server) {
-  io.use((socket, next) => {
+  io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) {
       return next(new Error("Authentication error"));
@@ -16,8 +22,22 @@ export default function setupSocketIO(io: Server) {
     });
   });
 
-  io.on("connection", (socket) => {
+  const typingUsers = new Map<number, Set<number>>();
+
+  io.on("connection", async (socket: AuthenticatedSocket) => {
     console.log("User connected:", socket.data.userId);
+
+    // Update user's presence status to ONLINE
+    await prisma.user.update({
+      where: { id: socket.data.userId },
+      data: { presenceStatus: PresenceStatus.ONLINE },
+    });
+
+    // Broadcast the user's online status to all connected clients
+    socket.broadcast.emit("presenceUpdate", {
+      userId: socket.data.userId,
+      status: PresenceStatus.ONLINE,
+    });
 
     socket.on("joinConversations", async (conversationIds: number[]) => {
       conversationIds.forEach((id) => {
@@ -43,7 +63,6 @@ export default function setupSocketIO(io: Server) {
         console.error("Error updating presence:", error);
       }
     });
-    const typingUsers = new Map<number, Set<number>>();
 
     socket.on(
       "typing",
@@ -84,36 +103,24 @@ export default function setupSocketIO(io: Server) {
       }
     );
 
-    socket.on("disconnect", () => {
-      // Remove user from all typing lists when they disconnect
-      typingUsers.forEach((typers, conversationId) => {
-        if (typers.delete(socket.data.userId)) {
-          io.to(`conversation:${conversationId}`).emit("typingUpdate", {
-            conversationId,
-            typingUsers: Array.from(typers),
-          });
-        }
-      });
-    });
-
     socket.on(
       "sendMessage",
       async (messageData: {
         conversationId: number;
         content: string;
-        contentType: string;
-        replyToId?: number;
+        contentType: MessageType;
+        parentId?: number;
       }) => {
         try {
-          const { conversationId, content, contentType, replyToId } =
+          const { conversationId, content, contentType, parentId } =
             messageData;
           const message = await prisma.message.create({
             data: {
               senderId: socket.data.userId,
               conversationId,
               content,
-              contentType: MessageType.TEXT,
-              replyToId,
+              contentType,
+              parentId,
             },
             include: {
               sender: {
@@ -123,7 +130,7 @@ export default function setupSocketIO(io: Server) {
                   profileImage: true,
                 },
               },
-              replyTo: {
+              parent: {
                 include: {
                   sender: {
                     select: {
@@ -141,12 +148,11 @@ export default function setupSocketIO(io: Server) {
             data: { lastMessageId: message.id },
           });
 
-          const encryptedContent = content; // Replace with actual encryption
+          io.to(`conversation:${conversationId}`).emit("newMessage", message);
 
-          io.to(`conversation:${conversationId}`).emit("newMessage", {
-            ...message,
-            content: encryptedContent,
-          });
+          if (message.parentId) {
+            io.to(`thread:${message.parentId}`).emit("newThreadReply", message);
+          }
 
           await prisma.participant.updateMany({
             where: {
@@ -159,6 +165,54 @@ export default function setupSocketIO(io: Server) {
           });
         } catch (error) {
           console.error("Error sending message:", error);
+        }
+      }
+    );
+
+    socket.on(
+      "editMessage",
+      async ({
+        messageId,
+        newContent,
+      }: {
+        messageId: number;
+        newContent: string;
+      }) => {
+        try {
+          const updatedMessage = await prisma.message.updateMany({
+            where: {
+              id: messageId,
+              senderId: socket.data.userId,
+            },
+            data: {
+              content: newContent,
+              updatedAt: new Date(),
+            },
+          });
+
+          if (updatedMessage.count > 0) {
+            const message = await prisma.message.findUnique({
+              where: { id: messageId },
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profileImage: true,
+                  },
+                },
+              },
+            });
+
+            if (message) {
+              io.to(`conversation:${message.conversationId}`).emit(
+                "messageUpdated",
+                message
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error editing message:", error);
         }
       }
     );
@@ -232,49 +286,39 @@ export default function setupSocketIO(io: Server) {
     );
 
     socket.on(
-      "editMessage",
-      async ({
-        messageId,
-        newContent,
-      }: {
-        messageId: number;
-        newContent: string;
-      }) => {
+      "getThreadReplies",
+      async ({ parentMessageId }: { parentMessageId: number }) => {
         try {
-          const updatedMessage = await prisma.message.updateMany({
-            where: {
-              id: messageId,
-              senderId: socket.data.userId, // Ensure only the sender can edit the message
-            },
-            data: {
-              content: newContent,
-              updatedAt: new Date(),
-            },
-          });
-
-          if (updatedMessage.count > 0) {
-            const message = await prisma.message.findUnique({
-              where: { id: messageId },
-              include: {
-                sender: {
-                  select: {
-                    id: true,
-                    username: true,
-                    profileImage: true,
+          const threadReplies = await prisma.message.findMany({
+            where: { parentId: parentMessageId },
+            include: {
+              sender: {
+                select: {
+                  id: true,
+                  username: true,
+                  profileImage: true,
+                },
+              },
+              reactions: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      username: true,
+                    },
                   },
                 },
               },
-            });
+            },
+            orderBy: { timestamp: "asc" },
+          });
 
-            if (message) {
-              io.to(`conversation:${message.conversationId}`).emit(
-                "messageUpdated",
-                message
-              );
-            }
-          }
+          socket.emit("threadReplies", {
+            parentMessageId,
+            replies: threadReplies,
+          });
         } catch (error) {
-          console.error("Error editing message:", error);
+          console.error("Error fetching thread replies:", error);
         }
       }
     );
@@ -317,64 +361,24 @@ export default function setupSocketIO(io: Server) {
       }
     );
 
-    socket.on(
-      "sendThreadReply",
-      async (messageData: {
-        parentMessageId: number;
-        content: string;
-        contentType: string;
-      }) => {
-        try {
-          const { parentMessageId, content, contentType } = messageData;
-
-          const parentMessage = await prisma.message.findUnique({
-            where: { id: parentMessageId },
-            select: { conversationId: true },
-          });
-
-          if (!parentMessage) {
-            throw new Error("Parent message not found");
-          }
-
-          const threadReply = await prisma.message.create({
-            data: {
-              senderId: socket.data.userId,
-              conversationId: parentMessage.conversationId,
-              content,
-              contentType: MessageType.TEXT,
-              parentId: parentMessageId,
-            },
-            include: {
-              sender: {
-                select: {
-                  id: true,
-                  username: true,
-                  profileImage: true,
-                },
-              },
-            },
-          });
-
-          io.to(`conversation:${parentMessage.conversationId}`).emit(
-            "newThreadReply",
-            threadReply
-          );
-        } catch (error) {
-          console.error("Error sending thread reply:", error);
-        }
-      }
-    );
-
     socket.on("disconnect", async () => {
+      console.log("User disconnected:", socket.data.userId);
+
       try {
         await prisma.user.update({
           where: { id: socket.data.userId },
-          data: { presenceStatus: "OFFLINE", lastSeen: new Date() },
+          data: {
+            presenceStatus: PresenceStatus.OFFLINE,
+            lastSeen: new Date(),
+          },
         });
+
         socket.broadcast.emit("presenceUpdate", {
           userId: socket.data.userId,
-          status: "OFFLINE",
+          status: PresenceStatus.OFFLINE,
         });
+
+        // Remove user from all typing lists when they disconnect
         typingUsers.forEach((typers, conversationId) => {
           if (typers.delete(socket.data.userId)) {
             io.to(`conversation:${conversationId}`).emit("typingUpdate", {
