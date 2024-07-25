@@ -75,4 +75,136 @@ router.get(
   }
 );
 
+router.put(
+  "/:messageId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const messageId = parseInt(req.params.messageId);
+    const { content } = req.body;
+
+    try {
+      const updatedMessage = await prisma.message.updateMany({
+        where: {
+          id: messageId,
+          senderId: userId,
+        },
+        data: {
+          content,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updatedMessage.count > 0) {
+        const message = await prisma.message.findUnique({
+          where: { id: messageId },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                profileImage: true,
+              },
+            },
+          },
+        });
+        res.json(message);
+      } else {
+        res.status(404).json({
+          error: "Message not found or you don't have permission to edit it",
+        });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Error updating message" });
+    }
+  }
+);
+
+router.post(
+  "/thread",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const { parentMessageId, content, contentType } = req.body;
+
+    try {
+      const parentMessage = await prisma.message.findUnique({
+        where: { id: parentMessageId },
+        select: { conversationId: true },
+      });
+
+      if (!parentMessage) {
+        return res.status(404).json({ error: "Parent message not found" });
+      }
+
+      const threadReply = await prisma.message.create({
+        data: {
+          senderId: userId,
+          conversationId: parentMessage.conversationId,
+          content,
+          contentType,
+          parentId: parentMessageId,
+        },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              username: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+
+      res.status(201).json(threadReply);
+    } catch (error) {
+      res.status(500).json({ error: "Error creating thread reply" });
+    }
+  }
+);
+
+router.get(
+  "/thread/:parentMessageId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const parentMessageId = parseInt(req.params.parentMessageId);
+
+    try {
+      const threadReplies = await prisma.message.findMany({
+        where: { parentId: parentMessageId },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              username: true,
+              profileImage: true,
+            },
+          },
+          reactions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
+            },
+          },
+          readBy: {
+            select: {
+              userId: true,
+              readAt: true,
+            },
+          },
+        },
+        orderBy: { timestamp: "asc" },
+      });
+
+      res.json(threadReplies);
+    } catch (error) {
+      res.status(500).json({ error: "Error fetching thread replies" });
+    }
+  }
+);
+
 export default router;

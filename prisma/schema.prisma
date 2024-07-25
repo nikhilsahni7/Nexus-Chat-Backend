@@ -79,9 +79,13 @@ model Message {
   conversation   Conversation      @relation(fields: [conversationId], references: [id])
   reactions      MessageReaction[]
   replyToId      Int?
-  replyTo        Message?          @relation("Replies", fields: [replyToId], references: [id])
-  replies        Message[]         @relation("Replies")
+  replyTo        Message?  @relation("Replies", fields: [replyToId], references: [id])
+  replies        Message[] @relation("Replies")
   lastMessageFor Conversation[]    @relation("LastMessage")
+  updatedAt      DateTime           @updatedAt @default(now())
+  parentId       Int?
+  parent         Message?  @relation("ThreadReplies" , fields: [parentId], references: [id])
+  threadReplies  Message[] @relation("ThreadReplies")
 
   @@index([conversationId, timestamp])
   User User[] @relation("ReceivedMessages")

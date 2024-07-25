@@ -38,11 +38,11 @@ router.put(
   authenticateToken,
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
-    const { bio, profileImage } = req.body;
+    const { bio, profileImage, username, email } = req.body;
     try {
       const updatedUser = await prisma.user.update({
         where: { id: userId },
-        data: { bio, profileImage },
+        data: { bio, profileImage, username, email },
         select: {
           id: true,
           username: true,
@@ -73,6 +73,31 @@ router.put(
       res.json(updatedSettings);
     } catch (error) {
       res.status(500).json({ error: "Error updating settings" });
+    }
+  }
+);
+
+router.get(
+  "/online",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      const onlineUsers = await prisma.user.findMany({
+        where: {
+          presenceStatus: {
+            not: "OFFLINE",
+          },
+        },
+        select: {
+          id: true,
+          username: true,
+          profileImage: true,
+          presenceStatus: true,
+        },
+      });
+      res.json(onlineUsers);
+    } catch (error) {
+      res.status(500).json({ error: "Error fetching online users" });
     }
   }
 );

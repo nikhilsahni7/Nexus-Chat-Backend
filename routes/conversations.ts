@@ -81,4 +81,47 @@ router.post(
   }
 );
 
+router.get(
+  "/:conversationId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const conversationId = parseInt(req.params.conversationId);
+
+    try {
+      const conversation = await prisma.conversation.findFirst({
+        where: {
+          id: conversationId,
+          participants: {
+            some: { userId },
+          },
+        },
+        include: {
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  profileImage: true,
+                  presenceStatus: true,
+                },
+              },
+            },
+          },
+          lastMessage: true,
+        },
+      });
+
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+
+      res.json(conversation);
+    } catch (error) {
+      res.status(500).json({ error: "Error fetching conversation" });
+    }
+  }
+);
+
 export default router;

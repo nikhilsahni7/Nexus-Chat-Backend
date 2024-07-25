@@ -3,18 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Real-Time Chat Tester</title>
+    <title>Comprehensive Real-Time Chat Tester</title>
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <style>
       body {
         font-family: Arial, sans-serif;
-        max-width: 800px;
+        max-width: 1000px;
         margin: 0 auto;
         padding: 20px;
         background-color: #f0f0f0;
       }
-      h1 {
-        text-align: center;
+      h1,
+      h2 {
         color: #333;
       }
       .container {
@@ -24,14 +24,14 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
       .section {
-        margin-bottom: 20px;
-      }
-      h2 {
-        color: #444;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-bottom: 10px;
       }
       input,
       button,
-      select {
+      select,
+      textarea {
         margin: 5px 0;
         padding: 5px;
       }
@@ -46,7 +46,11 @@
       button:hover {
         background-color: #45a049;
       }
-      #chatMessages {
+      #chatMessages,
+      #searchResults,
+      #userProfile,
+      #onlineUsers,
+      #threadReplies {
         height: 200px;
         overflow-y: scroll;
         border: 1px solid #ddd;
@@ -60,10 +64,14 @@
         font-weight: bold;
         color: #666;
       }
+      .typing-indicator {
+        font-style: italic;
+        color: #888;
+      }
     </style>
   </head>
   <body>
-    <h1>Real-Time Chat Tester</h1>
+    <h1>Comprehensive Real-Time Chat Tester</h1>
     <div class="container">
       <div class="section">
         <h2>Authentication</h2>
@@ -71,7 +79,40 @@
         <input type="password" id="password" placeholder="Password" />
         <button onclick="login()">Login</button>
         <button onclick="register()">Register</button>
+        <button onclick="logout()">Logout</button>
       </div>
+
+      <div class="section">
+        <h2>Profile</h2>
+        <button onclick="getProfile()">Get Profile</button>
+        <div id="userProfile"></div>
+        <input type="text" id="newBio" placeholder="New Bio" />
+        <input
+          type="text"
+          id="newProfileImage"
+          placeholder="New Profile Image URL"
+        />
+        <button onclick="updateProfile()">Update Profile</button>
+      </div>
+
+      <div class="section">
+        <h2>Settings</h2>
+        <label
+          ><input type="checkbox" id="notificationsEnabled" /> Notifications
+          Enabled</label
+        >
+        <label
+          ><input type="checkbox" id="darkModeEnabled" /> Dark Mode
+          Enabled</label
+        >
+        <select id="language">
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+        </select>
+        <button onclick="updateSettings()">Update Settings</button>
+      </div>
+
       <div class="section">
         <h2>Conversation</h2>
         <input
@@ -87,13 +128,21 @@
         />
         <button onclick="joinConversation()">Join Conversation</button>
         <button onclick="leaveConversation()">Leave Conversation</button>
+        <button onclick="getConversations()">Get All Conversations</button>
+        <div id="conversationsList"></div>
       </div>
       <div class="section">
         <h2>Chat</h2>
         <div id="chatMessages"></div>
-        <input type="text" id="messageInput" placeholder="Type a message" />
+        <div
+          id="typingIndicator"
+          class="typing-indicator"
+          data-conversation-id=""
+        ></div>
+        <textarea id="messageInput" placeholder="Type a message"></textarea>
         <button onclick="sendMessage()">Send</button>
       </div>
+
       <div class="section">
         <h2>Presence</h2>
         <select id="presenceStatus">
@@ -103,19 +152,54 @@
           <option value="OFFLINE">Offline</option>
         </select>
         <button onclick="setPresence()">Set Presence</button>
+        <h3>Online Users</h3>
+        <div id="onlineUsers"></div>
       </div>
+
       <div class="section">
-        <h2>Typing Indicator</h2>
-        <button onmousedown="startTyping()" onmouseup="stopTyping()">
-          Simulate Typing
-        </button>
+        <h2>Search Messages</h2>
+        <input type="text" id="searchQuery" placeholder="Search query" />
+        <button onclick="searchMessages()">Search</button>
+        <div id="searchResults"></div>
       </div>
+
+      <div class="section">
+        <h2>Message Actions</h2>
+        <input type="number" id="messageId" placeholder="Message ID" />
+        <input type="text" id="reactionEmoji" placeholder="Reaction Emoji" />
+        <button onclick="reactToMessage()">React to Message</button>
+        <input
+          type="text"
+          id="editMessageContent"
+          placeholder="Edit Message Content"
+        />
+        <button onclick="editMessage()">Edit Message</button>
+      </div>
+
+      <div class="section">
+        <h2>Threaded Replies</h2>
+        <input
+          type="number"
+          id="parentMessageId"
+          placeholder="Parent Message ID"
+        />
+        <input
+          type="text"
+          id="threadReplyContent"
+          placeholder="Thread Reply Content"
+        />
+        <button onclick="sendThreadReply()">Send Thread Reply</button>
+        <button onclick="getThreadReplies()">Get Thread Replies</button>
+        <div id="threadReplies"></div>
+      </div>
+
       <div id="status"></div>
     </div>
 
     <script>
       let socket;
       let currentConversationId;
+      let typingTimeout;
       const API_URL = "http://localhost:3000";
 
       function login() {
@@ -145,7 +229,7 @@
         const password = document.getElementById("password").value;
         const email = username + "@example.com"; // For testing purposes
 
-        fetch(`${API_URL}/register`, {
+        fetch(`${API_URL}/auth/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, email, password }),
@@ -161,6 +245,14 @@
           .catch((error) => updateStatus("Error: " + error));
       }
 
+      function logout() {
+        localStorage.removeItem("token");
+        if (socket) {
+          socket.disconnect();
+        }
+        updateStatus("Logged out successfully");
+      }
+
       function connectSocket() {
         socket = io(API_URL, {
           withCredentials: true,
@@ -171,6 +263,7 @@
 
         socket.on("connect", () => {
           updateStatus("Socket connected");
+          getOnlineUsers();
         });
 
         socket.on("newMessage", (message) => {
@@ -178,14 +271,115 @@
         });
 
         socket.on("typingUpdate", (data) => {
-          if (data.conversationId === currentConversationId) {
-            updateStatus(data.isTyping ? "Someone is typing..." : "");
+          const typingIndicator = document.querySelector(
+            `[data-conversation-id="${data.conversationId}"] .typing-indicator`
+          );
+          if (typingIndicator) {
+            const typingUsers = data.typingUsers
+              .map((user) => user.username)
+              .join(", ");
+            typingIndicator.textContent = typingUsers
+              ? `${typingUsers} is typing...`
+              : "";
           }
         });
 
         socket.on("presenceUpdate", (data) => {
+          const userStatusElement = document.querySelector(
+            `[data-user-id="${data.userId}"]`
+          );
+          if (userStatusElement) {
+            userStatusElement.textContent = data.status;
+          }
           updateStatus(`User ${data.userId} is now ${data.status}`);
+          getOnlineUsers(); // Keep this to refresh the full online users list
         });
+
+        socket.on("messageReactionUpdate", (message) => {
+          updateStatus(`Message ${message.id} received a new reaction`);
+        });
+
+        socket.on("messageUpdated", (message) => {
+          updateStatus(`Message ${message.id} was updated`);
+        });
+
+        socket.on("newThreadReply", (message) => {
+          updateStatus(
+            `New thread reply received for message ${message.parentId}`
+          );
+        });
+
+        socket.on("messagesRead", (data) => {
+          updateStatus(
+            `User ${data.userId} read messages in conversation ${data.conversationId}`
+          );
+        });
+      }
+      socket.on("messageUpdated", (updatedMessage) => {
+        const messageElement = document.querySelector(
+          `[data-message-id="${updatedMessage.id}"]`
+        );
+        if (messageElement) {
+          messageElement.textContent = `${updatedMessage.sender.username}: ${updatedMessage.content}`;
+        }
+      });
+
+      function getProfile() {
+        fetch(`${API_URL}/profile`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("userProfile").innerHTML = JSON.stringify(
+              data,
+              null,
+              2
+            );
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function updateProfile() {
+        const bio = document.getElementById("newBio").value;
+        const profileImage = document.getElementById("newProfileImage").value;
+        fetch(`${API_URL}/profile`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ bio, profileImage }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            updateStatus("Profile updated");
+            getProfile();
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function updateSettings() {
+        const notificationsEnabled = document.getElementById(
+          "notificationsEnabled"
+        ).checked;
+        const darkModeEnabled =
+          document.getElementById("darkModeEnabled").checked;
+        const language = document.getElementById("language").value;
+        fetch(`${API_URL}/profile/settings`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({
+            notificationsEnabled,
+            darkModeEnabled,
+            language,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => updateStatus("Settings updated"))
+          .catch((error) => updateStatus("Error: " + error));
       }
 
       function createConversation() {
@@ -219,6 +413,7 @@
         currentConversationId = document.getElementById("conversationId").value;
         socket.emit("joinConversations", [parseInt(currentConversationId)]);
         updateStatus("Joined conversation " + currentConversationId);
+        loadMessages(currentConversationId);
       }
 
       function leaveConversation() {
@@ -226,7 +421,46 @@
           socket.emit("leaveConversation", parseInt(currentConversationId));
           updateStatus("Left conversation " + currentConversationId);
           currentConversationId = null;
+          document.getElementById("chatMessages").innerHTML = "";
         }
+      }
+
+      function getConversations() {
+        fetch(`${API_URL}/conversations`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const conversationsListDiv =
+              document.getElementById("conversationsList");
+            conversationsListDiv.innerHTML = data
+              .map((conv) => `<p>ID: ${conv.id}, Name: ${conv.name}</p>`)
+              .join("");
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+
+      function loadMessages(conversationId) {
+        fetch(`${API_URL}/messages/${conversationId}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const messagesDiv = document.getElementById("chatMessages");
+            messagesDiv.innerHTML = data
+              .map(
+                (msg) =>
+                  `<p data-message-id="${msg.id}"><strong>${msg.sender.username}:</strong> ${msg.content}</p>`
+              )
+              .join("");
+
+            // Add typing indicator
+            const typingIndicator = document.createElement("div");
+            typingIndicator.className = "typing-indicator";
+            typingIndicator.dataset.conversationId = conversationId;
+            messagesDiv.appendChild(typingIndicator);
+          })
+          .catch((error) => updateStatus("Error: " + error));
       }
 
       function sendMessage() {
@@ -247,28 +481,90 @@
         updateStatus("Presence set to " + status);
       }
 
-      function startTyping() {
-        if (currentConversationId) {
-          socket.emit("typing", {
-            conversationId: parseInt(currentConversationId),
-            isTyping: true,
-          });
-        }
+      function getOnlineUsers() {
+        fetch(`${API_URL}/profile/online`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const onlineUsersDiv = document.getElementById("onlineUsers");
+            onlineUsersDiv.innerHTML = data
+              .map(
+                (user) =>
+                  `<p data-user-id="${user.id}">${user.username} - ${user.presenceStatus}</p>`
+              )
+              .join("");
+          })
+          .catch((error) => updateStatus("Error: " + error));
       }
 
-      function stopTyping() {
-        if (currentConversationId) {
-          socket.emit("typing", {
-            conversationId: parseInt(currentConversationId),
-            isTyping: false,
-          });
-        }
+      function searchMessages() {
+        const query = document.getElementById("searchQuery").value;
+        fetch(`${API_URL}/search?q=${encodeURIComponent(query)}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const resultsDiv = document.getElementById("searchResults");
+            resultsDiv.innerHTML = data
+              .map((msg) => `<p>${msg.sender.username}: ${msg.content}</p>`)
+              .join("");
+          })
+          .catch((error) => updateStatus("Error: " + error));
+      }
+      function reactToMessage() {
+        const messageId = document.getElementById("messageId").value;
+        const reaction = document.getElementById("reactionEmoji").value;
+        socket.emit("reactToMessage", {
+          messageId: parseInt(messageId),
+          reaction,
+        });
+        updateStatus("Reaction sent");
+      }
+
+      function editMessage() {
+        const messageId = document.getElementById("messageId").value;
+        const newContent = document.getElementById("editMessageContent").value;
+        socket.emit("editMessage", {
+          messageId: parseInt(messageId),
+          newContent,
+        });
+        updateStatus("Edit message request sent");
+      }
+
+      function sendThreadReply() {
+        const parentMessageId =
+          document.getElementById("parentMessageId").value;
+        const content = document.getElementById("threadReplyContent").value;
+        socket.emit("sendThreadReply", {
+          parentMessageId: parseInt(parentMessageId),
+          content,
+          contentType: "TEXT",
+        });
+        updateStatus("Thread reply sent");
+      }
+
+      function getThreadReplies() {
+        const parentMessageId =
+          document.getElementById("parentMessageId").value;
+        fetch(`${API_URL}/messages/thread/${parentMessageId}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            const repliesDiv = document.getElementById("threadReplies");
+            repliesDiv.innerHTML = data
+              .map((msg) => `<p>${msg.sender.username}: ${msg.content}</p>`)
+              .join("");
+          })
+          .catch((error) => updateStatus("Error: " + error));
       }
 
       function displayMessage(message) {
         const messagesDiv = document.getElementById("chatMessages");
         const messageElement = document.createElement("div");
         messageElement.className = "message";
+        messageElement.dataset.messageId = message.id;
         messageElement.textContent = `${message.sender.username}: ${message.content}`;
         messagesDiv.appendChild(messageElement);
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -276,6 +572,30 @@
 
       function updateStatus(message) {
         document.getElementById("status").textContent = message;
+      }
+
+      document
+        .getElementById("messageInput")
+        .addEventListener("input", function () {
+          if (currentConversationId) {
+            clearTimeout(typingTimeout);
+            socket.emit("typing", {
+              conversationId: parseInt(currentConversationId),
+              isTyping: true,
+            });
+
+            typingTimeout = setTimeout(() => {
+              socket.emit("typing", {
+                conversationId: parseInt(currentConversationId),
+                isTyping: false,
+              });
+            }, 3000);
+          }
+        });
+
+      // Initialize the page
+      if (localStorage.getItem("token")) {
+        connectSocket();
       }
     </script>
   </body>
