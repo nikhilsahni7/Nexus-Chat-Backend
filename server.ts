@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 import cors from "cors";
+import webpush from "web-push";
 import authRoutes from "./routes/auth";
 import profileRoutes from "./routes/profile";
 import conversationRoutes from "./routes/conversations";
@@ -34,7 +35,13 @@ export const io = new Server(server, {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.raw({ type: "application/octet-stream", limit: "10mb" }));
+
+// Setup web push
+webpush.setVapidDetails(
+  "mailto:nikhil.sahni321@gmail.com",
+  process.env.VAPID_PUBLIC_KEY!,
+  process.env.VAPID_PRIVATE_KEY!
+);
 
 app.use("/auth", authRoutes);
 app.use("/profile", profileRoutes);
@@ -59,3 +66,5 @@ app.use(
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+export { webpush };

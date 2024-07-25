@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "../server";
 import { authenticateToken } from "../middleware/auth";
 import type { AuthenticatedRequest } from "../types";
+import { upload } from "../middleware/upload";
 
 const router = express.Router();
 
@@ -32,17 +33,29 @@ router.get(
     }
   }
 );
-
 router.put(
   "/",
   authenticateToken,
+  upload.single("profileImage"),
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
-    const { bio, profileImage, username, email } = req.body;
+    const { bio, username, email } = req.body;
+
     try {
+      let profileImage = undefined;
+
+      if (req.file) {
+        profileImage = req.file.path;
+      }
+
       const updatedUser = await prisma.user.update({
         where: { id: userId },
-        data: { bio, profileImage, username, email },
+        data: {
+          bio,
+          username,
+          email,
+          ...(profileImage && { profileImage }),
+        },
         select: {
           id: true,
           username: true,
@@ -52,13 +65,14 @@ router.put(
           presenceStatus: true,
         },
       });
+
       res.json(updatedUser);
     } catch (error) {
+      console.error("Error updating profile:", error);
       res.status(500).json({ error: "Error updating profile" });
     }
   }
 );
-
 router.put(
   "/settings",
   authenticateToken,

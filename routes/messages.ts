@@ -3,6 +3,8 @@ import { prisma } from "../server";
 import { authenticateToken } from "../middleware/auth";
 import { io } from "../server";
 import type { AuthenticatedRequest } from "../types";
+import { sendNotification } from "./notifications";
+import { upload } from "../middleware/upload";
 
 const router = express.Router();
 
@@ -91,19 +93,35 @@ router.get(
 router.post(
   "/:conversationId",
   authenticateToken,
+  upload.single("file"),
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
     const conversationId = parseInt(req.params.conversationId);
-    const { content, contentType, parentId } = req.body;
+    let { content, contentType, parentId } = req.body;
 
     try {
+      // Handle file upload
+      if (req.file) {
+        content = req.file.path; // Cloudinary URL
+        if (req.file.mimetype.startsWith("image/")) {
+          contentType = "IMAGE";
+        } else if (req.file.mimetype.startsWith("video/")) {
+          contentType = "VIDEO";
+        } else {
+          contentType = "FILE";
+        }
+      } else {
+        // For text messages
+        contentType = "TEXT";
+      }
+
       const message = await prisma.message.create({
         data: {
           senderId: userId,
           conversationId,
           content,
           contentType,
-          parentId,
+          parentId: parentId ? parseInt(parentId) : undefined,
         },
         include: {
           sender: {
@@ -126,6 +144,24 @@ router.post(
         },
       });
 
+      const participants = await prisma.participant.findMany({
+        where: { conversationId: parseInt(req.params.conversationId) },
+        select: { userId: true },
+      });
+
+      participants.forEach(async (participant) => {
+        if (participant.userId !== req.user!.id) {
+          await sendNotification(participant.userId, {
+            title: "New Message",
+            body: `${req.user!.username}: ${message.content}`,
+            icon: req.user!.profileImage || "/default-avatar.png",
+            data: {
+              conversationId: message.conversationId,
+            },
+          });
+        }
+      });
+
       // Update last message for the conversation
       await prisma.conversation.update({
         where: { id: conversationId },
@@ -144,6 +180,80 @@ router.post(
     } catch (error) {
       res.status(500).json({ error: "Error sending message" });
     }
+  }
+);
+// separate route to handle file uploads but we will not use it right now
+router.post(
+  "/:conversationId/upload",
+  authenticateToken,
+  (req: AuthenticatedRequest, res: express.Response) => {
+    upload.single("file")(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const conversationId = parseInt(req.params.conversationId);
+      const userId = req.user!.id;
+
+      try {
+        let contentType: "IMAGE" | "VIDEO" | "FILE";
+        if (req.file.mimetype.startsWith("image/")) {
+          contentType = "IMAGE";
+        } else if (req.file.mimetype.startsWith("video/")) {
+          contentType = "VIDEO";
+        } else {
+          contentType = "FILE";
+        }
+
+        const message = await prisma.message.create({
+          data: {
+            senderId: userId,
+            conversationId,
+            content: req.file.path,
+            contentType,
+          },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                profileImage: true,
+              },
+            },
+          },
+        });
+
+        io.to(`conversation:${conversationId}`).emit("newMessage", message);
+
+        // Send notifications to other participants
+        const participants = await prisma.participant.findMany({
+          where: { conversationId },
+          select: { userId: true },
+        });
+
+        for (const participant of participants) {
+          if (participant.userId !== userId) {
+            await sendNotification(participant.userId, {
+              title: "New File",
+              body: `${req.user!.username} sent a file in the conversation`,
+              icon: req.user!.profileImage || "/default-avatar.png",
+              data: {
+                conversationId,
+              },
+            });
+          }
+        }
+
+        res.status(201).json(message);
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        res.status(500).json({ error: "Error uploading file" });
+      }
+    });
   }
 );
 

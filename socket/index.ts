@@ -33,6 +33,15 @@ export default function setupSocketIO(io: Server) {
       data: { presenceStatus: PresenceStatus.ONLINE },
     });
 
+    socket.on(
+      "uploadProgress",
+      (data: { conversationId: number; progress: number }) => {
+        socket
+          .to(`conversation:${data.conversationId}`)
+          .emit("fileUploadProgress", data);
+      }
+    );
+
     // Broadcast the user's online status to all connected clients
     socket.broadcast.emit("presenceUpdate", {
       userId: socket.data.userId,
