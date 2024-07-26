@@ -58,6 +58,24 @@ export default function setupSocketIO(io: Server) {
       socket.leave(`conversation:${conversationId}`);
     });
 
+    socket.on(
+      "participantAdded",
+      (data: { conversationId: number; participant: any }) => {
+        socket
+          .to(`conversation:${data.conversationId}`)
+          .emit("participantAdded", data.participant);
+      }
+    );
+
+    socket.on(
+      "participantRemoved",
+      (data: { conversationId: number; userId: number }) => {
+        socket
+          .to(`conversation:${data.conversationId}`)
+          .emit("participantRemoved", data);
+      }
+    );
+
     socket.on("setPresence", async (status: PresenceStatus) => {
       try {
         await prisma.user.update({
@@ -177,6 +195,158 @@ export default function setupSocketIO(io: Server) {
         }
       }
     );
+
+    socket.on("joinConversationByName", async (conversationName: string) => {
+      try {
+        const conversation = await prisma.conversation.findFirst({
+          where: {
+            name: conversationName,
+            isGroup: true,
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profileImage: true,
+                    presenceStatus: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (!conversation) {
+          socket.emit("joinConversationError", "Conversation not found");
+          return;
+        }
+
+        const existingParticipant = conversation.participants.find(
+          (p) => p.userId === socket.data.userId
+        );
+
+        if (existingParticipant) {
+          socket.emit("joinConversationError", "Already a participant");
+          return;
+        }
+
+        const updatedConversation = await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            participants: {
+              create: { userId: socket.data.userId },
+            },
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profileImage: true,
+                    presenceStatus: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        socket.join(`conversation:${conversation.id}`);
+        socket.emit("joinedConversation", updatedConversation);
+        socket.to(`conversation:${conversation.id}`).emit("participantAdded", {
+          conversationId: conversation.id,
+          participant: updatedConversation.participants.find(
+            (p) => p.userId === socket.data.userId
+          ),
+        });
+      } catch (error) {
+        console.error("Error joining conversation:", error);
+        socket.emit("joinConversationError", "Error joining conversation");
+      }
+    });
+
+    socket.on("startPrivateChat", async (username: string) => {
+      try {
+        const otherUser = await prisma.user.findUnique({
+          where: { username },
+        });
+
+        if (!otherUser) {
+          socket.emit("startPrivateChatError", "User not found");
+          return;
+        }
+
+        const existingConversation = await prisma.conversation.findFirst({
+          where: {
+            isGroup: false,
+            participants: {
+              every: {
+                userId: {
+                  in: [socket.data.userId, otherUser.id],
+                },
+              },
+            },
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profileImage: true,
+                    presenceStatus: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (existingConversation) {
+          socket.emit("privateChatStarted", existingConversation);
+          return;
+        }
+
+        const newConversation = await prisma.conversation.create({
+          data: {
+            isGroup: false,
+            participants: {
+              create: [
+                { userId: socket.data.userId },
+                { userId: otherUser.id },
+              ],
+            },
+          },
+          include: {
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    username: true,
+                    profileImage: true,
+                    presenceStatus: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        socket.join(`conversation:${newConversation.id}`);
+        socket.emit("privateChatStarted", newConversation);
+        io.to(`user:${otherUser.id}`).emit("newConversation", newConversation);
+      } catch (error) {
+        console.error("Error starting private chat:", error);
+        socket.emit("startPrivateChatError", "Error starting private chat");
+      }
+    });
 
     socket.on(
       "editMessage",
@@ -370,6 +540,164 @@ export default function setupSocketIO(io: Server) {
       }
     );
 
+    socket.on(
+      "joinConversationByInvite",
+      async ({ inviteCode }: { inviteCode: string }) => {
+        try {
+          const conversation = await prisma.conversation.findUnique({
+            where: { inviteCode },
+            include: {
+              participants: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      username: true,
+                      profileImage: true,
+                      presenceStatus: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          if (!conversation) {
+            socket.emit("joinConversationError", "Conversation not found");
+            return;
+          }
+
+          const existingParticipant = conversation.participants.find(
+            (p) => p.userId === socket.data.userId
+          );
+
+          if (existingParticipant) {
+            socket.emit("joinConversationError", "Already a participant");
+            return;
+          }
+
+          const updatedConversation = await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              participants: {
+                create: { userId: socket.data.userId },
+              },
+            },
+            include: {
+              participants: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      username: true,
+                      profileImage: true,
+                      presenceStatus: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          socket.join(`conversation:${conversation.id}`);
+          socket.emit("joinedConversation", updatedConversation);
+          socket
+            .to(`conversation:${conversation.id}`)
+            .emit("participantAdded", {
+              conversationId: conversation.id,
+              participant: updatedConversation.participants.find(
+                (p) => p.userId === socket.data.userId
+              ),
+            });
+        } catch (error) {
+          console.error("Error joining conversation by invite:", error);
+          socket.emit("joinConversationError", "Error joining conversation");
+        }
+      }
+    );
+
+    socket.on(
+      "updateGroupProfile",
+      async ({
+        conversationId,
+        name,
+        groupProfile,
+      }: {
+        conversationId: number;
+        name: string;
+        groupProfile: string;
+      }) => {
+        try {
+          const participant = await prisma.participant.findFirst({
+            where: {
+              userId: socket.data.userId,
+              conversationId,
+              isAdmin: true,
+            },
+          });
+
+          if (!participant) {
+            socket.emit("updateGroupProfileError", "Not authorized");
+            return;
+          }
+
+          const updatedConversation = await prisma.conversation.update({
+            where: { id: conversationId },
+            data: {
+              name,
+              groupProfile,
+            },
+            include: {
+              participants: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      username: true,
+                      profileImage: true,
+                      presenceStatus: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+          io.to(`conversation:${conversationId}`).emit(
+            "conversationProfileUpdated",
+            updatedConversation
+          );
+        } catch (error) {
+          console.error("Error updating group profile:", error);
+          socket.emit(
+            "updateGroupProfileError",
+            "Error updating group profile"
+          );
+        }
+      }
+    );
+
+    socket.on("getOnlineUsers", async () => {
+      try {
+        const onlineUsers = await prisma.user.findMany({
+          where: {
+            presenceStatus: {
+              not: PresenceStatus.OFFLINE,
+            },
+          },
+          select: {
+            id: true,
+            username: true,
+            profileImage: true,
+            presenceStatus: true,
+          },
+        });
+
+        socket.emit("onlineUsers", onlineUsers);
+      } catch (error) {
+        console.error("Error fetching online users:", error);
+      }
+    });
     socket.on("disconnect", async () => {
       console.log("User disconnected:", socket.data.userId);
 

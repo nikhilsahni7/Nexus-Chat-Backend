@@ -465,4 +465,41 @@ router.post(
   }
 );
 
+router.delete(
+  "/:messageId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const messageId = parseInt(req.params.messageId);
+
+    try {
+      const message = await prisma.message.findUnique({
+        where: { id: messageId },
+        select: { senderId: true },
+      });
+
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      if (message.senderId !== userId) {
+        return res.status(403).json({ error: "You can't delete this message" });
+      }
+
+      await prisma.message.delete({
+        where: { id: messageId },
+      });
+
+      io.to(`conversation:${message.senderId}`).emit("messageDeleted", {
+        messageId,
+        conversationId: message.senderId,
+      });
+
+      res.sendStatus(204);
+    } catch (error) {
+      res.status(500).json({ error: "Error deleting message" });
+    }
+  }
+);
+
 export default router;

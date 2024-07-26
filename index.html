@@ -5,16 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat Application</title>
     <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
         --primary-color: #4a90e2;
         --secondary-color: #f3f3f3;
         --text-color: #333;
         --border-color: #ddd;
+        --success-color: #28a745;
+        --error-color: #dc3545;
       }
 
       body {
-        font-family: Arial, sans-serif;
+        font-family: "Roboto", Arial, sans-serif;
         margin: 0;
         padding: 0;
         background-color: #f0f2f5;
@@ -25,6 +31,9 @@
         max-width: 1200px;
         margin: 0 auto;
         padding: 20px;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
       }
 
       .auth-container,
@@ -40,18 +49,21 @@
       h2,
       h3 {
         color: var(--primary-color);
+        margin-bottom: 20px;
       }
 
       input[type="text"],
       input[type="password"],
       input[type="email"],
-      textarea {
+      textarea,
+      select {
         width: 100%;
         padding: 10px;
         margin: 10px 0;
         border: 1px solid var(--border-color);
         border-radius: 4px;
         box-sizing: border-box;
+        font-size: 16px;
       }
 
       button {
@@ -61,11 +73,18 @@
         padding: 10px 20px;
         border-radius: 4px;
         cursor: pointer;
-        transition: background-color 0.3s;
+        transition: background-color 0.3s, transform 0.1s;
+        font-size: 16px;
+        font-weight: 500;
       }
 
       button:hover {
         background-color: #357ae8;
+        transform: translateY(-1px);
+      }
+
+      button:active {
+        transform: translateY(1px);
       }
 
       #chatMessages {
@@ -75,6 +94,7 @@
         padding: 10px;
         margin-bottom: 10px;
         background-color: var(--secondary-color);
+        border-radius: 8px;
       }
 
       .message {
@@ -83,47 +103,64 @@
         padding: 10px;
         margin-bottom: 10px;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        max-width: 70%;
+      }
+
+      .message.own {
+        align-self: flex-end;
+        background-color: #dcf8c6;
       }
 
       .message .username {
         font-weight: bold;
         color: var(--primary-color);
+        margin-bottom: 5px;
       }
 
       .message .content {
         margin-top: 5px;
+        word-break: break-word;
       }
 
       .message .timestamp {
         font-size: 0.8em;
         color: #888;
+        text-align: right;
+        margin-top: 5px;
       }
 
       .message .actions {
         margin-top: 5px;
+        display: flex;
+        justify-content: flex-end;
       }
 
       .message .actions button {
         font-size: 0.8em;
         padding: 5px 10px;
-        margin-right: 5px;
+        margin-left: 5px;
       }
 
       #onlineUsers {
         margin-bottom: 20px;
+        display: flex;
+        flex-wrap: wrap;
       }
 
       #onlineUsers .user {
         display: inline-block;
         margin-right: 10px;
+        margin-bottom: 10px;
         background-color: var(--secondary-color);
         padding: 5px 10px;
         border-radius: 20px;
+        font-size: 14px;
       }
 
       #typingIndicator {
         font-style: italic;
         color: #888;
+        margin-bottom: 10px;
       }
 
       .hidden {
@@ -136,6 +173,72 @@
 
       #userSettings {
         margin-top: 20px;
+      }
+
+      .flex-container {
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .flex-item {
+        flex: 1;
+        margin-right: 20px;
+      }
+
+      .flex-item:last-child {
+        margin-right: 0;
+      }
+
+      #conversationList {
+        margin-bottom: 20px;
+      }
+
+      .conversation-item {
+        padding: 10px;
+        border-bottom: 1px solid var(--border-color);
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+
+      .conversation-item:hover {
+        background-color: var(--secondary-color);
+      }
+
+      .conversation-item.active {
+        background-color: #e6f2ff;
+      }
+
+      .image-message img {
+        max-width: 100%;
+        border-radius: 8px;
+      }
+
+      .video-message video {
+        max-width: 100%;
+        border-radius: 8px;
+      }
+
+      #fileInput {
+        display: none;
+      }
+
+      #uploadLabel {
+        display: inline-block;
+        padding: 10px 20px;
+        background-color: var(--secondary-color);
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+
+      .success-message {
+        color: var(--success-color);
+        margin-top: 10px;
+      }
+
+      .error-message {
+        color: var(--error-color);
+        margin-top: 10px;
       }
     </style>
   </head>
@@ -159,63 +262,100 @@
       </div>
 
       <div id="chatContainer" class="chat-container hidden">
-        <div id="profileContainer">
-          <h2>Profile</h2>
-          <div id="userProfile"></div>
-          <button onclick="showEditProfile()">Edit Profile</button>
-          <div id="editProfileForm" class="hidden">
-            <input type="text" id="editUsername" placeholder="Username" />
-            <input type="email" id="editEmail" placeholder="Email" />
-            <input type="text" id="editBio" placeholder="Bio" />
-            <input
-              type="text"
-              id="editProfileImage"
-              placeholder="Profile Image URL"
-            />
-            <button onclick="updateProfile()">Update Profile</button>
+        <div class="flex-container">
+          <div class="flex-item">
+            <div id="profileContainer">
+              <h2>Profile</h2>
+              <div id="userProfile"></div>
+              <button onclick="showEditProfile()">Edit Profile</button>
+              <div id="editProfileForm" class="hidden">
+                <input type="text" id="editUsername" placeholder="Username" />
+                <input type="email" id="editEmail" placeholder="Email" />
+                <input type="text" id="editBio" placeholder="Bio" />
+                <input type="file" id="editProfileImage" accept="image/*" />
+                <button onclick="updateProfile()">Update Profile</button>
+              </div>
+              <div id="userSettings">
+                <h3>User Settings</h3>
+                <label>
+                  <input type="checkbox" id="notificationsEnabled" /> Enable
+                  Notifications
+                </label>
+                <label>
+                  <input type="checkbox" id="darkModeEnabled" /> Dark Mode
+                </label>
+                <select id="languageSelect">
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="fr">French</option>
+                </select>
+                <button onclick="updateSettings()">Update Settings</button>
+              </div>
+            </div>
           </div>
-          <div id="userSettings">
-            <h3>User Settings</h3>
-            <label>
-              <input type="checkbox" id="notificationsEnabled" /> Enable
-              Notifications
-            </label>
-            <label>
-              <input type="checkbox" id="darkModeEnabled" /> Dark Mode
-            </label>
-            <select id="languageSelect">
-              <option value="en">English</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-            </select>
-            <button onclick="updateSettings()">Update Settings</button>
+          <div class="flex-item">
+            <div id="conversationsContainer">
+              <h2>Conversations</h2>
+              <button onclick="showCreateConversation()">
+                Create New Conversation
+              </button>
+              <div id="createConversationForm" class="hidden">
+                <input
+                  type="text"
+                  id="conversationName"
+                  placeholder="Conversation Name"
+                />
+                <input
+                  type="text"
+                  id="participantUsernames"
+                  placeholder="Participant Usernames (comma-separated)"
+                />
+                <label>
+                  <input type="checkbox" id="isGroupConversation" /> Group
+                  Conversation
+                </label>
+                <button onclick="createConversation()">Create</button>
+              </div>
+              <div id="conversationList"></div>
+            </div>
           </div>
         </div>
 
-        <h2>Chat</h2>
-        <div id="onlineUsers"></div>
-        <div id="conversations">
-          <h3>Conversations</h3>
-          <button onclick="createConversation()">
-            Create New Conversation
-          </button>
-          <div id="conversationList"></div>
-          <div id="joinConversation">
-            <input
-              type="number"
-              id="joinConversationInput"
-              placeholder="Conversation ID"
-            />
-            <button onclick="joinConversationById()">Join Conversation</button>
+        <div id="joinConversationContainer">
+          <h3>Join Group Conversation</h3>
+          <input
+            type="text"
+            id="joinConversationName"
+            placeholder="Enter conversation name"
+          />
+          <button onclick="joinGroupConversation()">Join</button>
+        </div>
+
+        <div id="startPrivateChatContainer">
+          <h3>Start Private Chat</h3>
+          <input
+            type="text"
+            id="privateChatUsername"
+            placeholder="Enter username"
+          />
+          <button onclick="startPrivateChat()">Start Chat</button>
+        </div>
+
+        <div id="chatArea" class="hidden">
+          <h2 id="currentConversationName"></h2>
+          <div id="onlineUsers"></div>
+          <div id="chatMessages"></div>
+          <div id="typingIndicator"></div>
+          <div>
+            <textarea
+              id="messageInput"
+              placeholder="Type your message..."
+            ></textarea>
+            <label id="uploadLabel" for="fileInput">Upload File</label>
+            <input type="file" id="fileInput" accept="image/*,video/*" />
+            <button onclick="sendMessage()">Send</button>
           </div>
         </div>
-        <div id="chatMessages"></div>
-        <div id="typingIndicator"></div>
-        <textarea
-          id="messageInput"
-          placeholder="Type your message..."
-        ></textarea>
-        <button onclick="sendMessage()">Send</button>
       </div>
     </div>
 
@@ -245,12 +385,12 @@
               fetchConversations();
               fetchOnlineUsers();
             } else {
-              alert("Login failed: " + data.error);
+              showError("Login failed: " + data.error);
             }
           })
           .catch((error) => {
             console.error("Login error:", error);
-            alert("Login failed. Please try again.");
+            showError("Login failed. Please try again.");
           });
       }
 
@@ -267,10 +407,76 @@
           .then((response) => response.json())
           .then((data) => {
             if (data.userId) {
-              alert("Registration successful. Please login.");
+              showSuccess("Registration successful. Please login.");
             } else {
-              alert("Registration failed: " + data.error);
+              showError("Registration failed: " + data.error);
             }
+          });
+      }
+
+      function joinGroupConversation() {
+        const conversationName = document
+          .getElementById("joinConversationName")
+          .value.trim();
+        if (!conversationName) {
+          showError("Please enter a conversation name");
+          return;
+        }
+
+        fetch(`${API_URL}/conversations/join`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ conversationName }),
+        })
+          .then((response) => response.json())
+          .then((conversation) => {
+            if (conversation.error) {
+              showError(conversation.error);
+            } else {
+              addConversationToList(conversation);
+              loadConversation(conversation.id);
+              showSuccess(`Joined conversation: ${conversation.name}`);
+            }
+          })
+          .catch((error) => {
+            console.error("Error joining conversation:", error);
+            showError("Error joining conversation");
+          });
+      }
+
+      function startPrivateChat() {
+        const username = document
+          .getElementById("privateChatUsername")
+          .value.trim();
+        if (!username) {
+          showError("Please enter a username");
+          return;
+        }
+
+        fetch(`${API_URL}/conversations/private`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ username }),
+        })
+          .then((response) => response.json())
+          .then((conversation) => {
+            if (conversation.error) {
+              showError(conversation.error);
+            } else {
+              addConversationToList(conversation);
+              loadConversation(conversation.id);
+              showSuccess(`Started chat with ${username}`);
+            }
+          })
+          .catch((error) => {
+            console.error("Error starting private chat:", error);
+            showError("Error starting private chat");
           });
       }
 
@@ -317,6 +523,18 @@
         socket.on("newConversation", (conversation) => {
           addConversationToList(conversation);
         });
+
+        socket.on("participantAdded", (data) => {
+          if (data.conversationId === currentConversationId) {
+            fetchConversationDetails(currentConversationId);
+          }
+        });
+
+        socket.on("participantRemoved", (data) => {
+          if (data.conversationId === currentConversationId) {
+            fetchConversationDetails(currentConversationId);
+          }
+        });
       }
 
       function fetchProfile() {
@@ -341,7 +559,6 @@
           }" alt="Profile Image" width="150">
         `;
 
-        // Set user settings
         document.getElementById("notificationsEnabled").checked =
           user.settings.notificationsEnabled;
         document.getElementById("darkModeEnabled").checked =
@@ -355,41 +572,49 @@
         document.getElementById("editUsername").value = currentUser.username;
         document.getElementById("editEmail").value = currentUser.email;
         document.getElementById("editBio").value = currentUser.bio || "";
-        document.getElementById("editProfileImage").value =
-          currentUser.profileImage || "";
       }
 
       function updateProfile() {
-        const updatedProfile = {
-          username: document.getElementById("editUsername").value,
-          email: document.getElementById("editEmail").value,
-          bio: document.getElementById("editBio").value,
-          profileImage: document.getElementById("editProfileImage").value,
-        };
+        const formData = new FormData();
+        formData.append(
+          "username",
+          document.getElementById("editUsername").value
+        );
+        formData.append("email", document.getElementById("editEmail").value);
+        formData.append("bio", document.getElementById("editBio").value);
+
+        const profileImageFile =
+          document.getElementById("editProfileImage").files[0];
+        if (profileImageFile) {
+          formData.append("profileImage", profileImageFile);
+        }
 
         fetch(`${API_URL}/profile`, {
           method: "PUT",
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-          body: JSON.stringify(updatedProfile),
+          body: formData,
         })
           .then((response) => response.json())
-          .then((user) => {
-            currentUser = user;
-            displayProfile(user);
+          .then((updatedUser) => {
+            currentUser = updatedUser;
+            displayProfile(updatedUser);
             document.getElementById("editProfileForm").classList.add("hidden");
+          })
+          .catch((error) => {
+            console.error("Error updating profile:", error);
+            showError("Error updating profile");
           });
       }
 
       function updateSettings() {
-        const updatedSettings = {
-          notificationsEnabled: document.getElementById("notificationsEnabled")
-            .checked,
-          darkModeEnabled: document.getElementById("darkModeEnabled").checked,
-          language: document.getElementById("languageSelect").value,
-        };
+        const notificationsEnabled = document.getElementById(
+          "notificationsEnabled"
+        ).checked;
+        const darkModeEnabled =
+          document.getElementById("darkModeEnabled").checked;
+        const language = document.getElementById("languageSelect").value;
 
         fetch(`${API_URL}/profile/settings`, {
           method: "PUT",
@@ -397,12 +622,19 @@
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-          body: JSON.stringify(updatedSettings),
+          body: JSON.stringify({
+            notificationsEnabled,
+            darkModeEnabled,
+            language,
+          }),
         })
           .then((response) => response.json())
-          .then((settings) => {
-            currentUser.settings = settings;
-            alert("Settings updated successfully");
+          .then((updatedSettings) => {
+            showSuccess("Settings updated successfully");
+          })
+          .catch((error) => {
+            console.error("Error updating settings:", error);
+            showError("Error updating settings");
           });
       }
 
@@ -412,245 +644,377 @@
         })
           .then((response) => response.json())
           .then((conversations) => {
-            const conversationList =
-              document.getElementById("conversationList");
-            conversationList.innerHTML = "";
-            conversations.forEach((conv) => {
-              const convElement = document.createElement("div");
-              convElement.textContent = `${conv.name || "Unnamed"} (ID: ${
-                conv.id
-              })`;
-              convElement.onclick = () => joinConversation(conv.id);
-              conversationList.appendChild(convElement);
-            });
+            displayConversations(conversations);
+          })
+          .catch((error) => {
+            console.error("Error fetching conversations:", error);
           });
       }
 
-      function joinConversation(conversationId) {
-        if (!conversationId) {
-          alert("Invalid conversation ID");
-          return;
-        }
-        currentConversationId = conversationId;
-        socket.emit("joinConversations", [conversationId]);
-        fetchMessages(conversationId);
-        document.querySelector("#typingIndicator").textContent = "";
+      function displayConversations(conversations) {
+        const conversationList = document.getElementById("conversationList");
+        conversationList.innerHTML = "";
+
+        conversations.forEach((conversation) => {
+          const conversationItem = document.createElement("div");
+          conversationItem.classList.add("conversation-item");
+          conversationItem.innerText =
+            conversation.name ||
+            conversation.participants.map((p) => p.user.username).join(", ");
+          conversationItem.onclick = () => loadConversation(conversation.id);
+          conversationList.appendChild(conversationItem);
+        });
       }
 
-      function fetchMessages(conversationId) {
-        if (!conversationId) {
-          console.error("Invalid conversation ID");
-          return;
-        }
-        fetch(`${API_URL}/messages/${conversationId}`, {
+      function loadConversation(conversationId) {
+        currentConversationId = conversationId;
+        document.getElementById("chatArea").classList.remove("hidden");
+        fetchMessages(conversationId);
+        fetchConversationDetails(conversationId);
+      }
+
+      function fetchConversationDetails(conversationId) {
+        fetch(`${API_URL}/conversations/${conversationId}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        })
+          .then((response) => response.json())
+          .then((conversation) => {
+            document.getElementById("currentConversationName").innerText =
+              conversation.name ||
+              conversation.participants.map((p) => p.user.username).join(", ");
+            displayOnlineUsers(conversation.participants);
+          })
+          .catch((error) => {
+            console.error("Error fetching conversation details:", error);
+          });
+      }
+
+      function displayOnlineUsers(participants) {
+        const onlineUsersContainer = document.getElementById("onlineUsers");
+        onlineUsersContainer.innerHTML = "";
+
+        participants.forEach((participant) => {
+          const userElement = document.createElement("span");
+          userElement.classList.add("user");
+          userElement.innerText = `${participant.user.username} (${participant.user.presenceStatus})`;
+          onlineUsersContainer.appendChild(userElement);
+        });
+      }
+
+      function fetchMessages(conversationId, page = 1) {
+        fetch(`${API_URL}/messages/${conversationId}?page=${page}`, {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
         })
           .then((response) => response.json())
           .then((messages) => {
-            const chatMessages = document.getElementById("chatMessages");
-            chatMessages.innerHTML = "";
-            messages.forEach(displayMessage);
+            displayMessages(messages);
           })
           .catch((error) => {
             console.error("Error fetching messages:", error);
           });
       }
 
-      // Update the joinConversationByNameOrId function to only use ID
-      function joinConversationById() {
-        const input = document.getElementById("joinConversationInput").value;
-        if (!input) return;
+      function displayMessages(messages) {
+        const chatMessages = document.getElementById("chatMessages");
+        chatMessages.innerHTML = "";
 
-        const conversationId = parseInt(input, 10);
-        if (isNaN(conversationId)) {
-          alert("Please enter a valid conversation ID");
-          return;
-        }
+        messages.forEach((message) => {
+          displayMessage(message);
+        });
 
-        joinConversation(conversationId);
-      }
-      function addConversationToList(conv) {
-        const conversationList = document.getElementById("conversationList");
-        const convElement = document.createElement("div");
-        convElement.textContent = conv.name || `Conversation ${conv.id}`;
-        convElement.onclick = () => joinConversation(conv.id | 1);
-        conversationList.appendChild(convElement);
-      }
-
-      function createConversation() {
-        const name = prompt("Enter conversation name:");
-        const participantUsernames = prompt(
-          "Enter participant usernames (comma-separated):"
-        );
-        if (name && participantUsernames) {
-          const participantIds = participantUsernames
-            .split(",")
-            .map((username) => username.trim());
-          fetch(`${API_URL}/conversations`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-            body: JSON.stringify({
-              name,
-              isGroup: participantIds.length > 1,
-              participantIds,
-            }),
-          })
-            .then((response) => response.json())
-            .then((conversation) => {
-              addConversationToList(conversation);
-              joinConversation(conversation.id);
-            });
-        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
       }
 
       function displayMessage(message) {
         const chatMessages = document.getElementById("chatMessages");
         const messageElement = document.createElement("div");
-        messageElement.className = "message";
-        messageElement.id = `message-${message.id}`;
+        messageElement.classList.add("message");
+        messageElement.dataset.messageId = message.id;
+
+        if (message.senderId === currentUser.id) {
+          messageElement.classList.add("own");
+        }
+
         messageElement.innerHTML = `
-          <div class="username">${message.sender.username}</div>
-          <div class="content">${message.content}</div>
-          <div class="timestamp">${new Date(
-            message.timestamp
-          ).toLocaleString()}</div>
-          <div class="actions">
-            <button onclick="editMessage(${message.id})">Edit</button>
-            <button onclick="deleteMessage(${message.id})">Delete</button>
-            <button onclick="reactToMessage(${message.id}, '👍')">👍</button>
-            <button onclick="reactToMessage(${message.id}, '❤️')">❤️</button>
-          </div>
-          <div class="reactions"></div>
-        `;
+      <div class="username">${message.sender.username}</div>
+      <div class="content">${message.content}</div>
+      <div class="timestamp">${new Date(
+        message.timestamp
+      ).toLocaleString()}</div>
+      <div class="actions">
+        <button onclick="reactToMessage(${message.id})">React</button>
+        <button onclick="replyToMessage(${message.id})">Reply</button>
+      </div>
+      <div class="reactions"></div>
+    `;
+
+        if (message.reactions && message.reactions.length > 0) {
+          updateMessageReactions(message.id, message.reactions);
+        }
+
         chatMessages.appendChild(messageElement);
         chatMessages.scrollTop = chatMessages.scrollHeight;
-        updateMessageReactions(message.id, message.reactions);
       }
 
       function sendMessage() {
-        const content = document.getElementById("messageInput").value;
-        if (!content.trim()) return;
+        const messageInput = document.getElementById("messageInput");
+        const content = messageInput.value.trim();
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files[0];
 
-        socket.emit("sendMessage", {
-          conversationId: currentConversationId,
-          content,
-          contentType: "TEXT",
-        });
-        document.getElementById("messageInput").value = "";
+        if (!content && !file) return;
+
+        const formData = new FormData();
+        if (content) formData.append("content", content);
+        if (file) formData.append("file", file);
+
+        fetch(`${API_URL}/messages/${currentConversationId}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((message) => {
+            messageInput.value = "";
+            fileInput.value = "";
+            displayMessage(message);
+          })
+          .catch((error) => {
+            console.error("Error sending message:", error);
+            showError("Error sending message");
+          });
       }
 
-      function editMessage(messageId) {
-        const messageElement = document.getElementById(`message-${messageId}`);
-        const contentElement = messageElement.querySelector(".content");
-        const newContent = prompt("Edit message:", contentElement.textContent);
-        if (newContent && newContent !== contentElement.textContent) {
-          socket.emit("editMessage", { messageId, newContent });
-        }
-      }
+      function reactToMessage(messageId) {
+        const reaction = prompt("Enter your reaction (e.g., 👍, 👎, ❤️):");
+        if (!reaction) return;
 
-      function deleteMessage(messageId) {
-        if (confirm("Are you sure you want to delete this message?")) {
-          socket.emit("deleteMessage", { messageId });
-        }
-      }
-
-      function updateMessage(message) {
-        const messageElement = document.getElementById(`message-${message.id}`);
-        if (messageElement) {
-          messageElement.querySelector(".content").textContent =
-            message.content;
-          messageElement.querySelector(".timestamp").textContent = new Date(
-            message.updatedAt
-          ).toLocaleString();
-        }
-      }
-
-      function reactToMessage(messageId, reaction) {
-        socket.emit("reactToMessage", { messageId, reaction });
+        fetch(`${API_URL}/messages/${messageId}/react`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({ reaction }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.removed) {
+              // Reaction was removed
+              const reactionElement = document.querySelector(
+                `.message[data-message-id="${messageId}"] .reactions .reaction[data-user-id="${currentUser.id}"]`
+              );
+              if (reactionElement) {
+                reactionElement.remove();
+              }
+            } else {
+              updateMessageReactions(messageId, data.reactions);
+            }
+          })
+          .catch((error) => {
+            console.error("Error reacting to message:", error);
+            showError("Error reacting to message");
+          });
       }
 
       function updateMessageReactions(messageId, reactions) {
-        const messageElement = document.getElementById(`message-${messageId}`);
-        if (messageElement) {
-          const reactionsElement = messageElement.querySelector(".reactions");
-          reactionsElement.innerHTML = "";
-          for (const [reaction, users] of Object.entries(reactions)) {
-            reactionsElement.innerHTML += `${reaction} (${users.length}) `;
-          }
-        }
+        const messageElement = document.querySelector(
+          `.message[data-message-id="${messageId}"]`
+        );
+        const reactionsContainer = messageElement.querySelector(".reactions");
+        reactionsContainer.innerHTML = "";
+
+        reactions.forEach((reaction) => {
+          const reactionElement = document.createElement("span");
+          reactionElement.classList.add("reaction");
+          reactionElement.dataset.userId = reaction.userId;
+          reactionElement.innerText = `${reaction.reaction} ${reaction.user.username}`;
+          reactionsContainer.appendChild(reactionElement);
+        });
       }
 
-      function fetchOnlineUsers() {
-        fetch(`${API_URL}/users/online`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      function replyToMessage(messageId) {
+        // Implement reply functionality
+        console.log("Reply to message:", messageId);
+      }
+
+      function showCreateConversation() {
+        document
+          .getElementById("createConversationForm")
+          .classList.remove("hidden");
+      }
+
+      function createConversation() {
+        const name = document.getElementById("conversationName").value;
+        const participantUsernames = document.getElementById(
+          "participantUsernames"
+        ).value;
+        const isGroup = document.getElementById("isGroupConversation").checked;
+
+        fetch(`${API_URL}/conversations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+          body: JSON.stringify({
+            name,
+            participantUsernames: participantUsernames
+              .split(",")
+              .map((username) => username.trim()),
+            isGroup,
+          }),
         })
           .then((response) => response.json())
-          .then((users) => {
-            const onlineUsersElement = document.getElementById("onlineUsers");
-            onlineUsersElement.innerHTML = "<h3>Online Users</h3>";
-            users.forEach((user) => {
-              const userElement = document.createElement("div");
-              userElement.className = "user";
-              userElement.textContent = user.username;
-              onlineUsersElement.appendChild(userElement);
-            });
+          .then((conversation) => {
+            document
+              .getElementById("createConversationForm")
+              .classList.add("hidden");
+            addConversationToList(conversation);
+            loadConversation(conversation.id);
+            showSuccess(
+              `Created ${isGroup ? "group" : "private"} conversation: ${
+                conversation.name || "Unnamed"
+              }`
+            );
+          })
+          .catch((error) => {
+            console.error("Error creating conversation:", error);
+            showError("Error creating conversation");
           });
       }
 
-      document.getElementById("messageInput").addEventListener("input", () => {
-        if (typingTimeout) {
-          clearTimeout(typingTimeout);
-        }
-        socket.emit("typing", {
-          conversationId: currentConversationId,
-          isTyping: true,
-        });
-        typingTimeout = setTimeout(() => {
-          socket.emit("typing", {
-            conversationId: currentConversationId,
-            isTyping: false,
-          });
-        }, 2000);
-      });
+      function addConversationToList(conversation) {
+        const conversationList = document.getElementById("conversationList");
+        const conversationItem = document.createElement("div");
+        conversationItem.classList.add("conversation-item");
+        conversationItem.innerText =
+          conversation.name ||
+          conversation.participants.map((p) => p.user.username).join(", ");
+        conversationItem.onclick = () => loadConversation(conversation.id);
+        conversationList.appendChild(conversationItem);
+      }
 
       function updateTypingIndicator(typingUsers) {
         const typingIndicator = document.getElementById("typingIndicator");
         if (typingUsers.length > 0) {
-          typingIndicator.textContent = `${typingUsers
-            .map((user) => user.username)
-            .join(", ")} is typing...`;
+          typingIndicator.innerText = `${typingUsers.join(", ")} ${
+            typingUsers.length > 1 ? "are" : "is"
+          } typing...`;
         } else {
-          typingIndicator.textContent = "";
+          typingIndicator.innerText = "";
         }
       }
 
       function updateUserPresence(userId, status) {
-        const onlineUsersElement = document.getElementById("onlineUsers");
-        const userElement = onlineUsersElement.querySelector(
+        const userElement = document.querySelector(
           `.user[data-user-id="${userId}"]`
         );
         if (userElement) {
-          if (status === "ONLINE") {
-            userElement.classList.add("online");
-          } else {
-            userElement.classList.remove("online");
-          }
-        } else if (status === "ONLINE") {
-          fetchOnlineUsers();
+          userElement.innerText = `${
+            userElement.innerText.split(" (")[0]
+          } (${status})`;
         }
       }
 
-      // Initialize the application
-      if (localStorage.getItem("token")) {
-        showChatInterface();
-        connectSocket();
-        fetchProfile();
-        fetchConversations();
-        fetchOnlineUsers();
+      function showError(message) {
+        const errorElement = document.createElement("div");
+        errorElement.classList.add("error-message");
+        errorElement.innerText = message;
+        document.body.appendChild(errorElement);
+        setTimeout(() => {
+          errorElement.remove();
+        }, 3000);
       }
+
+      function showSuccess(message) {
+        const successElement = document.createElement("div");
+        successElement.classList.add("success-message");
+        successElement.innerText = message;
+        document.body.appendChild(successElement);
+        setTimeout(() => {
+          successElement.remove();
+        }, 3000);
+      }
+
+      // Socket event listeners
+      socket.on("newMessage", (message) => {
+        if (message.conversationId === currentConversationId) {
+          displayMessage(message);
+        }
+      });
+
+      socket.on("messageUpdated", (message) => {
+        if (message.conversationId === currentConversationId) {
+          const messageElement = document.querySelector(
+            `.message[data-message-id="${message.id}"]`
+          );
+          if (messageElement) {
+            messageElement.querySelector(".content").innerText =
+              message.content;
+          }
+        }
+      });
+
+      socket.on("messageReactionUpdate", (data) => {
+        if (data.messageId) {
+          updateMessageReactions(data.messageId, data.reactions);
+        }
+      });
+
+      socket.on("typingUpdate", (data) => {
+        if (data.conversationId === currentConversationId) {
+          updateTypingIndicator(data.typingUsers);
+        }
+      });
+
+      socket.on("presenceUpdate", (data) => {
+        updateUserPresence(data.userId, data.status);
+      });
+
+      socket.on("newConversation", (conversation) => {
+        addConversationToList(conversation);
+      });
+
+      socket.on("participantAdded", (data) => {
+        if (data.conversationId === currentConversationId) {
+          fetchConversationDetails(currentConversationId);
+        }
+      });
+
+      socket.on("participantRemoved", (data) => {
+        if (data.conversationId === currentConversationId) {
+          fetchConversationDetails(currentConversationId);
+        }
+      });
+      socket.on("joinedConversation", (conversation) => {
+        addConversationToList(conversation);
+        loadConversation(conversation.id);
+        showSuccess(`Joined conversation: ${conversation.name}`);
+      });
+
+      socket.on("joinConversationError", (error) => {
+        showError(error);
+      });
+
+      socket.on("privateChatStarted", (conversation) => {
+        addConversationToList(conversation);
+        loadConversation(conversation.id);
+        showSuccess(
+          `Started chat with ${
+            conversation.participants.find((p) => p.userId !== currentUser.id)
+              .user.username
+          }`
+        );
+      });
+
+      socket.on("startPrivateChatError", (error) => {
+        showError(error);
+      });
+
+      // Initialize the chat application
+      fetchProfile();
+      fetchConversations();
     </script>
   </body>
 </html>

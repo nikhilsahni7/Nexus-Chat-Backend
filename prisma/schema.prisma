@@ -49,6 +49,8 @@ model Conversation {
   messages     Message[]
   lastMessage  Message?      @relation("LastMessage", fields: [lastMessageId], references: [id])
   typingStatuses TypingStatus[]
+   inviteCode    String?   @unique
+  groupProfile  String?
 }
 
 model Participant {
