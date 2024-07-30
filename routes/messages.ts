@@ -60,17 +60,19 @@ router.get(
         take: pageSize,
       });
 
-      // Mark messages as read
-      const unreadMessages = messages.filter(
-        (msg) =>
-          msg.senderId !== userId &&
-          !msg.readBy.some((rb) => rb.userId === userId)
-      );
+      // Mark messages as read in a single query
+      const unreadMessageIds = messages
+        .filter(
+          (msg) =>
+            msg.senderId !== userId &&
+            !msg.readBy.some((rb) => rb.userId === userId)
+        )
+        .map((msg) => msg.id);
 
-      if (unreadMessages.length > 0) {
+      if (unreadMessageIds.length > 0) {
         await prisma.readReceipt.createMany({
-          data: unreadMessages.map((msg) => ({
-            messageId: msg.id,
+          data: unreadMessageIds.map((messageId) => ({
+            messageId,
             userId,
           })),
           skipDuplicates: true,
@@ -79,7 +81,7 @@ router.get(
         // Notify other users that messages have been read
         io.to(`conversation:${conversationId}`).emit("messagesRead", {
           userId,
-          messageIds: unreadMessages.map((msg) => msg.id),
+          messageIds: unreadMessageIds,
         });
       }
 
@@ -257,60 +259,6 @@ router.post(
   }
 );
 
-router.put(
-  "/:messageId",
-  authenticateToken,
-  async (req: AuthenticatedRequest, res: express.Response) => {
-    const userId = req.user!.id;
-    const messageId = parseInt(req.params.messageId);
-    const { content } = req.body;
-
-    try {
-      const updatedMessage = await prisma.message.updateMany({
-        where: {
-          id: messageId,
-          senderId: userId,
-        },
-        data: {
-          content,
-          updatedAt: new Date(),
-        },
-      });
-
-      if (updatedMessage.count > 0) {
-        const message = await prisma.message.findUnique({
-          where: { id: messageId },
-          include: {
-            sender: {
-              select: {
-                id: true,
-                username: true,
-                profileImage: true,
-              },
-            },
-          },
-        });
-
-        // Emit the updated message to all participants in the conversation
-        if (message) {
-          io.to(`conversation:${message.conversationId}`).emit(
-            "messageUpdated",
-            message
-          );
-        }
-
-        res.json(message);
-      } else {
-        res.status(404).json({
-          error: "Message not found or you don't have permission to edit it",
-        });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Error updating message" });
-    }
-  }
-);
-
 router.post(
   "/:messageId/react",
   authenticateToken,
@@ -441,10 +389,20 @@ router.post(
     const messageId = parseInt(req.params.messageId);
 
     try {
-      await prisma.readReceipt.create({
-        data: {
+      await prisma.readReceipt.upsert({
+        where: {
+          messageId_userId: {
+            messageId,
+            userId,
+          },
+        },
+        update: {
+          readAt: new Date(), // Update the read timestamp if it already exists
+        },
+        create: {
           messageId,
           userId,
+          readAt: new Date(),
         },
       });
 
@@ -453,14 +411,72 @@ router.post(
         include: { readBy: true },
       });
 
-      io.to(`conversation:${message!.conversationId}`).emit("messageRead", {
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      io.to(`conversation:${message.conversationId}`).emit("messageRead", {
         messageId,
         userId,
       });
 
       res.sendStatus(200);
     } catch (error) {
+      console.error("Error marking message as read:", error);
       res.status(500).json({ error: "Error marking message as read" });
+    }
+  }
+);
+
+router.put(
+  "/:messageId",
+  authenticateToken,
+  async (req: AuthenticatedRequest, res: express.Response) => {
+    const userId = req.user!.id;
+    const messageId = parseInt(req.params.messageId);
+    const { content } = req.body;
+
+    try {
+      const updatedMessage = await prisma.message.updateMany({
+        where: {
+          id: messageId,
+          senderId: userId,
+        },
+        data: {
+          content,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updatedMessage.count > 0) {
+        const message = await prisma.message.findUnique({
+          where: { id: messageId },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                username: true,
+                profileImage: true,
+              },
+            },
+          },
+        });
+
+        if (message) {
+          io.to(`conversation:${message.conversationId}`).emit(
+            "messageUpdated",
+            message
+          );
+        }
+
+        res.json(message);
+      } else {
+        res.status(404).json({
+          error: "Message not found or you don't have permission to edit it",
+        });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Error updating message" });
     }
   }
 );
@@ -475,29 +491,49 @@ router.delete(
     try {
       const message = await prisma.message.findUnique({
         where: { id: messageId },
-        select: { senderId: true },
+        select: { senderId: true, conversationId: true },
       });
 
       if (!message) {
+        console.log(`Message not found: ${messageId}`);
         return res.status(404).json({ error: "Message not found" });
       }
 
       if (message.senderId !== userId) {
+        console.log(
+          `Unauthorized delete attempt: User ${userId} tried to delete message ${messageId}`
+        );
         return res.status(403).json({ error: "You can't delete this message" });
       }
 
+      // First, delete associated read receipts
+      await prisma.readReceipt.deleteMany({
+        where: { messageId: messageId },
+      });
+
+      // Then, delete associated reactions
+      await prisma.messageReaction.deleteMany({
+        where: { messageId: messageId },
+      });
+
+      // Finally, delete the message
       await prisma.message.delete({
         where: { id: messageId },
       });
 
-      io.to(`conversation:${message.senderId}`).emit("messageDeleted", {
+      console.log(`Message ${messageId} deleted successfully`);
+
+      io.to(`conversation:${message.conversationId}`).emit("messageDeleted", {
         messageId,
-        conversationId: message.senderId,
+        conversationId: message.conversationId,
       });
 
       res.sendStatus(204);
-    } catch (error) {
-      res.status(500).json({ error: "Error deleting message" });
+    } catch (error: any) {
+      console.error("Error deleting message:", error);
+      res
+        .status(500)
+        .json({ error: "Error deleting message", details: error.message });
     }
   }
 );

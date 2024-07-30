@@ -37,7 +37,7 @@ router.post(
   }
 );
 
-router.post("/login", async (req: express.Request, res: express.Response) => {
+router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const user = await prisma.user.findUnique({ where: { username } });
 
@@ -46,7 +46,11 @@ router.post("/login", async (req: express.Request, res: express.Response) => {
       { id: user.id, username: user.username },
       process.env.JWT_SECRET!
     );
-    res.json({ accessToken });
+    // Send both user and accessToken
+    res.json({
+      user: { id: user.id, username: user.username, email: user.email },
+      accessToken,
+    });
   } else {
     res.status(400).json({ error: "Invalid credentials" });
   }

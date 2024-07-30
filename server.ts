@@ -35,7 +35,7 @@ app.use(
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 200, // limit each IP to 200  requests per windowMs
 });
 app.use(limiter);
 
@@ -73,7 +73,7 @@ setupSocketIO(io);
 app.use(errorHandler);
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
 });

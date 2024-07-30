@@ -17,3 +17,30 @@
 {"level":"info","message":"Server running on port 3000","service":"chat-app","timestamp":"2024-07-26 23:59:17"}
 {"level":"info","message":"Server running on port 3000","service":"chat-app","timestamp":"2024-07-26 23:59:25"}
 {"level":"info","message":"Server running on port 3000","service":"chat-app","timestamp":"2024-07-27 00:18:11"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-27 02:46:07"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-27 02:52:20"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-27 23:17:39"}
+{"level":"error","message":"500 - Unexpected end of form - /messages/2 - POST - ::1","service":"chat-app","timestamp":"2024-07-28 02:38:46"}
+{"level":"error","message":"500 - Unexpected end of form - /messages/2 - POST - ::1","service":"chat-app","timestamp":"2024-07-28 02:38:55"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-28 03:32:19"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-28 04:07:17"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 03:36:03"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:03:22"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:05:04"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:35:27"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:40:44"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:42:12"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:42:13"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 05:43:26"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 06:17:55"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 06:19:08"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-29 21:50:25"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-30 21:20:31"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:10:00"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:10:00"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:42:38"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:42:47"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:42:58"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:43:33"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:47:12"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-07-31 02:50:55"}
