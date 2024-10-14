@@ -6,6 +6,7 @@ import { authenticateToken } from "../middleware/auth";
 import { io } from "../server";
 import type { AuthenticatedRequest } from "../types";
 import { upload } from "../middleware/upload";
+import { profile } from "winston";
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ router.get(
           participants: {
             some: { userId },
           },
+          isGroup: true,
         },
         include: {
           participants: {
@@ -61,25 +63,41 @@ router.get(
   }
 );
 
-// 2. Create a new conversation (group or private)
+// 2. Create a new group conversation
 router.post(
   "/",
   authenticateToken,
+  upload.single("groupProfile"),
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
-    const { name, participantIds, isGroup } = req.body;
+    const { name, participantIds } = req.body;
+
     try {
-      const inviteCode = isGroup ? generateInviteCode() : undefined;
+      // Parse participantIds from string to array of numbers
+      const parsedParticipantIds = participantIds
+        .split(",")
+        .map((id: string) => parseInt(id.trim(), 10))
+        .filter((id: number) => !isNaN(id));
+
+      // Add the creator to the participants if not already included
+      if (!parsedParticipantIds.includes(userId)) {
+        parsedParticipantIds.push(userId);
+      }
+
+      const groupProfile = req.file ? req.file.path : undefined;
+      const inviteCode = generateInviteCode();
+
       const conversation = await prisma.conversation.create({
         data: {
-          name: isGroup ? name : undefined,
-          isGroup,
+          name,
+          isGroup: true,
           inviteCode,
+          groupProfile,
           participants: {
-            create: [
-              { userId, isAdmin: true },
-              ...participantIds.map((id: number) => ({ userId: id })),
-            ],
+            create: parsedParticipantIds.map((id: number) => ({
+              userId: id,
+              isAdmin: id === userId, // Set the creator as admin
+            })),
           },
         },
         include: {
@@ -99,12 +117,13 @@ router.post(
       });
 
       // Notify all participants about the new conversation
-      participantIds.forEach((participantId: number) => {
+      parsedParticipantIds.forEach((participantId: number) => {
         io.to(`user:${participantId}`).emit("newConversation", conversation);
       });
 
       res.status(201).json(conversation);
     } catch (error) {
+      console.error("Error creating conversation:", error);
       res.status(500).json({ error: "Error creating conversation" });
     }
   }
@@ -125,6 +144,7 @@ router.get(
           participants: {
             some: { userId },
           },
+          isGroup: true,
         },
         include: {
           participants: {
@@ -169,7 +189,7 @@ router.get(
   }
 );
 
-// 4. Add a participant to a conversation (admin only)
+// 4. Add a participant to a conversation
 router.post(
   "/:conversationId/participants",
   authenticateToken,
@@ -179,18 +199,13 @@ router.post(
     const { participantId } = req.body;
 
     try {
-      const adminParticipant = await prisma.participant.findFirst({
-        where: {
-          userId,
-          conversationId,
-          isAdmin: true,
-        },
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: true },
       });
 
-      if (!adminParticipant) {
-        return res
-          .status(403)
-          .json({ error: "Only admins can add participants" });
+      if (!conversation || !conversation.isGroup) {
+        return res.status(404).json({ error: "Group conversation not found" });
       }
 
       const newParticipant = await prisma.participant.create({
@@ -222,7 +237,7 @@ router.post(
   }
 );
 
-// 5. Remove a participant (admin only)
+// 5. Remove a participant
 router.delete(
   "/:conversationId/participants/:participantId",
   authenticateToken,
@@ -232,18 +247,13 @@ router.delete(
     const participantId = parseInt(req.params.participantId);
 
     try {
-      const adminParticipant = await prisma.participant.findFirst({
-        where: {
-          userId,
-          conversationId,
-          isAdmin: true,
-        },
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: true },
       });
 
-      if (!adminParticipant) {
-        return res
-          .status(403)
-          .json({ error: "Only admins can remove participants" });
+      if (!conversation || !conversation.isGroup) {
+        return res.status(404).json({ error: "Group conversation not found" });
       }
 
       await prisma.participant.delete({
@@ -276,6 +286,15 @@ router.post(
     const conversationId = parseInt(req.params.conversationId);
 
     try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: true },
+      });
+
+      if (!conversation || !conversation.isGroup) {
+        return res.status(404).json({ error: "Group conversation not found" });
+      }
+
       await prisma.participant.delete({
         where: {
           userId_conversationId: {
@@ -325,8 +344,8 @@ router.post(
         },
       });
 
-      if (!conversation) {
-        return res.status(404).json({ error: "Conversation not found" });
+      if (!conversation || !conversation.isGroup) {
+        return res.status(404).json({ error: "Group conversation not found" });
       }
 
       const existingParticipant = conversation.participants.find(
@@ -389,18 +408,13 @@ router.put(
     const { name } = req.body;
 
     try {
-      const participant = await prisma.participant.findFirst({
-        where: {
-          userId,
-          conversationId,
-          isAdmin: true,
-        },
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: true },
       });
 
-      if (!participant) {
-        return res
-          .status(403)
-          .json({ error: "Only admins can update group profile" });
+      if (!conversation || !conversation.isGroup) {
+        return res.status(404).json({ error: "Group conversation not found" });
       }
 
       let groupProfile = undefined;
@@ -438,92 +452,6 @@ router.put(
       res.json(updatedConversation);
     } catch (error) {
       res.status(500).json({ error: "Error updating group profile" });
-    }
-  }
-);
-
-// 9. Start a private chat
-router.post(
-  "/private",
-  authenticateToken,
-  async (req: AuthenticatedRequest, res: express.Response) => {
-    const userId = req.user!.id;
-    const { username } = req.body;
-
-    try {
-      const otherUser = await prisma.user.findUnique({
-        where: { username },
-      });
-
-      if (!otherUser) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const existingConversation = await prisma.conversation.findFirst({
-        where: {
-          isGroup: false,
-          participants: {
-            every: {
-              userId: {
-                in: [userId, otherUser.id],
-              },
-            },
-          },
-        },
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  profileImage: true,
-                  presenceStatus: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (existingConversation) {
-        io.to(`user:${userId}`).emit(
-          "privateChatStarted",
-          existingConversation
-        );
-        return res.status(200).json(existingConversation);
-      }
-
-      const newConversation = await prisma.conversation.create({
-        data: {
-          isGroup: false,
-          participants: {
-            create: [{ userId }, { userId: otherUser.id }],
-          },
-        },
-        include: {
-          participants: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  username: true,
-                  profileImage: true,
-                  presenceStatus: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      // Emit socket events
-      io.to(`user:${userId}`).emit("privateChatStarted", newConversation);
-      io.to(`user:${otherUser.id}`).emit("newConversation", newConversation);
-
-      res.status(201).json(newConversation);
-    } catch (error) {
-      res.status(500).json({ error: "Error starting private chat" });
     }
   }
 );

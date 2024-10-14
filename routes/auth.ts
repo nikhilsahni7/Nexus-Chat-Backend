@@ -40,15 +40,34 @@ router.post(
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const user = await prisma.user.findUnique({ where: { username } });
-
   if (user && (await bcrypt.compare(password, user.password))) {
     const accessToken = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET!
     );
+
+    // Update user login information
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        lastLoginIP: req.ip,
+        loginCount: { increment: 1 },
+        lastActiveAt: new Date(),
+      },
+    });
+
     // Send both user and accessToken
     res.json({
-      user: { id: user.id, username: user.username, email: user.email },
+      user: {
+        id: updatedUser.id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        lastLoginAt: updatedUser.lastLoginAt,
+        loginCount: updatedUser.loginCount,
+        lastActiveAt: updatedUser.lastActiveAt,
+        createdAt: updatedUser.createdAt,
+      },
       accessToken,
     });
   } else {

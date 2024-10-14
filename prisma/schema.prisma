@@ -10,7 +10,7 @@ generator client {
 }
 
 model User {
-  id               Int               @id @default(autoincrement())
+ id               Int               @id @default(autoincrement())
   username         String            @unique
   email            String            @unique
   password         String
@@ -20,6 +20,11 @@ model User {
   bio              String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  lastLoginAt      DateTime?
+  lastLoginIP      String?
+  totalLoginTime   Int               @default(0)
+  loginCount       Int               @default(0)
+  lastActiveAt     DateTime?
   sentMessages     Message[]         @relation("SentMessages")
   participants     Participant[]
   typingStatuses   TypingStatus[]
@@ -91,6 +96,7 @@ model ReadReceipt {
   id        Int      @id @default(autoincrement())
   messageId Int
   userId    Int
+  username String?  @map("username") 
   readAt    DateTime @default(now())
   message   Message  @relation(fields: [messageId], references: [id])
   user      User     @relation(fields: [userId], references: [id])

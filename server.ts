@@ -17,6 +17,8 @@ import notificationRoutes from "./routes/notifications";
 import setupSocketIO from "./socket";
 import errorHandler from "./middleware/errorHandler";
 import logger from "./utils/logger";
+import { trackActivity } from "./middleware/trackActivity";
+import { authenticateToken } from "./middleware/auth";
 
 dotenv.config();
 
@@ -28,14 +30,14 @@ export const prisma = new PrismaClient();
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL ?? "http://localhost:3000",
     credentials: true,
   })
 );
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // limit each IP to 200  requests per windowMs
+  max: 600, // limit each IP to 300 requests per windowMs
 });
 app.use(limiter);
 
@@ -59,12 +61,12 @@ webpush.setVapidDetails(
 
 // Routes
 app.use("/auth", authRoutes);
-app.use("/profile", profileRoutes);
-app.use("/conversations", conversationRoutes);
-app.use("/messages", messageRoutes);
-app.use("/search", searchRoutes);
-app.use("/upload", uploadRoutes);
-app.use("/notifications", notificationRoutes);
+app.use("/profile", authenticateToken, trackActivity, profileRoutes);
+app.use("/conversations", authenticateToken, trackActivity, conversationRoutes);
+app.use("/messages", authenticateToken, trackActivity, messageRoutes);
+app.use("/search", authenticateToken, trackActivity, searchRoutes);
+app.use("/upload", authenticateToken, trackActivity, uploadRoutes);
+app.use("/notifications", authenticateToken, trackActivity, notificationRoutes);
 
 // Socket.IO event handlers
 setupSocketIO(io);

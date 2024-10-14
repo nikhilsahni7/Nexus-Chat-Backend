@@ -13,6 +13,7 @@ router.get(
   authenticateToken,
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
+
     const conversationId = parseInt(req.params.conversationId);
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = 50;
@@ -38,12 +39,18 @@ router.get(
               },
             },
           },
+
           readBy: {
-            select: {
-              userId: true,
-              readAt: true,
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                },
+              },
             },
           },
+
           parent: {
             include: {
               sender: {
@@ -389,7 +396,7 @@ router.post(
     const messageId = parseInt(req.params.messageId);
 
     try {
-      await prisma.readReceipt.upsert({
+      const readReceipt = await prisma.readReceipt.upsert({
         where: {
           messageId_userId: {
             messageId,
@@ -404,11 +411,28 @@ router.post(
           userId,
           readAt: new Date(),
         },
+        include: {
+          user: {
+            select: {
+              username: true,
+            },
+          },
+        },
       });
 
       const message = await prisma.message.findUnique({
         where: { id: messageId },
-        include: { readBy: true },
+        include: {
+          readBy: {
+            include: {
+              user: {
+                select: {
+                  username: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!message) {
@@ -418,6 +442,7 @@ router.post(
       io.to(`conversation:${message.conversationId}`).emit("messageRead", {
         messageId,
         userId,
+        username: req.user!.username,
       });
 
       res.sendStatus(200);
