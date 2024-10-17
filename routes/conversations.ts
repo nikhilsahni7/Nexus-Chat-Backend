@@ -64,24 +64,37 @@ router.get(
 );
 
 // 2. Create a new group conversation
+
 router.post(
   "/",
   authenticateToken,
   upload.single("groupProfile"),
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
-    const { name, participantIds } = req.body;
+    const { name, participantUsernames } = req.body;
 
     try {
-      // Parse participantIds from string to array of numbers
-      const parsedParticipantIds = participantIds
+      // Parse participantUsernames from string to array of strings
+      const parsedParticipantUsernames = participantUsernames
         .split(",")
-        .map((id: string) => parseInt(id.trim(), 10))
-        .filter((id: number) => !isNaN(id));
+        .map((username: string) => username.trim())
+        .filter((username: string) => username !== "");
+
+      // Fetch users by their usernames
+      const participants = await prisma.user.findMany({
+        where: {
+          username: {
+            in: parsedParticipantUsernames,
+          },
+        },
+      });
+
+      // Get participant IDs
+      const participantIds = participants.map((p) => p.id);
 
       // Add the creator to the participants if not already included
-      if (!parsedParticipantIds.includes(userId)) {
-        parsedParticipantIds.push(userId);
+      if (!participantIds.includes(userId)) {
+        participantIds.push(userId);
       }
 
       const groupProfile = req.file ? req.file.path : undefined;
@@ -94,7 +107,7 @@ router.post(
           inviteCode,
           groupProfile,
           participants: {
-            create: parsedParticipantIds.map((id: number) => ({
+            create: participantIds.map((id: number) => ({
               userId: id,
               isAdmin: id === userId, // Set the creator as admin
             })),
@@ -117,7 +130,7 @@ router.post(
       });
 
       // Notify all participants about the new conversation
-      parsedParticipantIds.forEach((participantId: number) => {
+      participantIds.forEach((participantId: number) => {
         io.to(`user:${participantId}`).emit("newConversation", conversation);
       });
 
@@ -196,7 +209,7 @@ router.post(
   async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
     const conversationId = parseInt(req.params.conversationId);
-    const { participantId } = req.body;
+    const { username } = req.body;
 
     try {
       const conversation = await prisma.conversation.findUnique({
@@ -208,9 +221,17 @@ router.post(
         return res.status(404).json({ error: "Group conversation not found" });
       }
 
+      const userToAdd = await prisma.user.findUnique({
+        where: { username },
+      });
+
+      if (!userToAdd) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const newParticipant = await prisma.participant.create({
         data: {
-          userId: participantId,
+          userId: userToAdd.id,
           conversationId,
         },
         include: {
@@ -417,6 +438,16 @@ router.put(
         return res.status(404).json({ error: "Group conversation not found" });
       }
 
+      const isAdmin = conversation.participants.some(
+        (p) => p.userId === userId && p.isAdmin
+      );
+
+      if (!isAdmin) {
+        return res
+          .status(403)
+          .json({ error: "Only admins can update the group profile" });
+      }
+
       let groupProfile = undefined;
       if (req.file) {
         groupProfile = req.file.path; // Cloudinary URL
@@ -425,7 +456,7 @@ router.put(
       const updatedConversation = await prisma.conversation.update({
         where: { id: conversationId },
         data: {
-          name,
+          ...(name && { name }),
           ...(groupProfile && { groupProfile }),
         },
         include: {
@@ -455,7 +486,6 @@ router.put(
     }
   }
 );
-
 // Helper function to generate invite code
 function generateInviteCode() {
   return Math.random().toString(36).substring(2, 10);

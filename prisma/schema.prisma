@@ -61,6 +61,7 @@ model Conversation {
 model Participant {
   id             Int          @id @default(autoincrement())
   userId         Int
+  username       String?      @map("username")
   conversationId Int
   joinedAt       DateTime     @default(now())
   leftAt         DateTime?

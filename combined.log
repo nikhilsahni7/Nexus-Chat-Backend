@@ -87,3 +87,15 @@
 {"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-14 23:04:12"}
 {"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-14 23:21:55"}
 {"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-15 00:53:30"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-15 02:40:30"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:08:21"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:28:32"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:28:34"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:28:36"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:31:54"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:31:55"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:31:56"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:43:27"}
+{"level":"info","message":"Server running on port 4000","service":"chat-app","timestamp":"2024-10-18 00:45:34"}
+{"level":"error","message":"500 - Image file format webp not allowed - /conversations/22/profile - PUT - ::ffff:127.0.0.1","service":"chat-app","timestamp":"2024-10-18 01:05:50"}
+{"level":"error","message":"500 - Image file format webp not allowed - /conversations/22/profile - PUT - ::ffff:127.0.0.1","service":"chat-app","timestamp":"2024-10-18 01:05:52"}
