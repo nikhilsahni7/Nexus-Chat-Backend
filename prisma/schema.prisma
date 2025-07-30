@@ -32,6 +32,11 @@ model User {
   settings         UserSettings?
   readReceipts     ReadReceipt[]
   pushSubscriptions PushSubscription[]
+  isEmailVerified   Boolean   @default(false)
+  emailVerificationOTP String?
+  emailVerificationOTPExpiresAt DateTime?
+  passwordResetOTP String?
+  passwordResetOTPExpiresAt DateTime?
 }
 
 model UserSettings {
@@ -97,7 +102,7 @@ model ReadReceipt {
   id        Int      @id @default(autoincrement())
   messageId Int
   userId    Int
-  username String?  @map("username") 
+  username String?  @map("username")
   readAt    DateTime @default(now())
   message   Message  @relation(fields: [messageId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
